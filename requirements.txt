@@ -1,0 +1,8 @@
+# Workshop 1 — Python dependencies
+# Install with:  python -m pip install -r requirements.txt
+pandas>=2.2
+requests>=2.32
+PyYAML>=6.0
+python-dotenv>=1.0
+matplotlib>=3.8
+jupyterlab>=4.0

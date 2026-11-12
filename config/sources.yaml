@@ -1,0 +1,164 @@
+# ---------------------------------------------------------------------------
+# config/sources.yaml
+# One entry per source of the wildfire monitoring system.
+# This file is the ingestion contract draft: it must be readable as a
+# specification by someone who has not seen the code.
+#
+# Rules that apply to ALL sources:
+#   - timestamps are stored in UTC
+#   - coordinates are WGS84, decimal degrees
+#   - every record keeps a raw_reference pointing to the unmodified response
+#   - writes are idempotent on duplicate_key
+# ---------------------------------------------------------------------------
+
+project:
+  hazard: wildfire
+  observation_unit: hotspot_detection
+  severity_measure: frp   # Fire Radiative Power, MW
+  geographic_scope: Colombia
+  region_level: department          # 33 regions: 32 departments + Bogota D.C.
+  bbox: [-79.0, -4.5, -66.5, 13.5]  # west, south, east, north
+  baseline_window_start: 2018-01-01 # primary baseline (VIIRS NOAA-20)
+  bbox_warning: >
+    The bounding box includes Venezuela, Ecuador, Peru, Brazil and Panama.
+    Every detection MUST be filtered with point-in-polygon against the region
+    layer before it is aggregated. Skip this and the indicator measures fires
+    in five countries.
+
+sources:
+  # -------------------------------------------------------------------------
+  # F1 - HISTORICAL: NASA FIRMS bulk archive
+  # -------------------------------------------------------------------------
+  - name: firms_archive
+    role: historical
+    owner: NASA FIRMS / LANCE (NASA EOSDIS)
+    url: https://firms.modaps.eosdis.nasa.gov/download/
+    access_method: bulk_archive_web   # request by web form, files delivered by email
+    authentication: earthdata_or_email_code
+    format: [csv, shp, json]
+    sensors:
+      - { id: MODIS_SP,           first_date: "2000-11-01", last_date: frozen,  note: "Collection 6.1; Terra in standby since March 2026; Aqua being retired" }
+      - { id: VIIRS_SNPP_SP,      first_date: "2012-01-20", last_date: "2026-11-02", note: "Suomi NPP ceased production on 2026-11-02; archive only" }
+      - { id: VIIRS_NOAA20_SP,    first_date: "2018-04-01", last_date: null,     note: "Primary baseline sensor" }
+    coverage: [2000-11-01, present]
+    update_policy: >
+      Near-real-time records are replaced by standard-processing (SP) records
+      with roughly a 5-month lag. Historical records are therefore NOT immutable.
+    historical_strategy:
+      partition_by: [year, sensor]   # never mix sensors in one partition
+      note: >
+        One archive request per (year, sensor). Cache permanently with a checksum
+        and never re-download a partition that already exists.
+    incremental_strategy: none
+    rate_limit: as_published_by_firms_archive
+    license: NASA EOSDIS open data; cite NASA FIRMS/LANCE
+    duplicate_key: [source, latitude, longitude, acq_date, acq_time, satellite]
+
+  # -------------------------------------------------------------------------
+  # F2 - HISTORICAL: Open-Meteo Historical Weather (ERA5 reanalysis)
+  # -------------------------------------------------------------------------
+  - name: open_meteo_historical
+    role: historical
+    owner: Open-Meteo (ERA5 / ECMWF Copernicus reanalysis)
+    url: https://open-meteo.com/en/docs/historical-weather-api
+    endpoint: https://archive-api.open-meteo.com/v1/archive
+    access_method: rest
+    authentication: none
+    format: json
+    coverage: [1940-01-01, present]
+    resolution:
+      era5: 0.25   # degrees, ~28 km
+      era5_land: 0.1
+      note: >
+        Data from 2017 onwards uses newer 9 km models. This is a model
+        discontinuity: treat it like the satellite sensor change and build the
+        baseline per era.
+    variables: [temperature_2m, relative_humidity_2m, precipitation, wind_speed_10m, vapour_pressure_deficit]
+    update_policy: reanalysis, latency of several days for the most recent days
+    historical_strategy:
+      partition_by: [year]
+      batching: >
+        One request with a coordinates list for all 33 region centroids,
+        instead of 33 separate requests.
+      timezone_param: "timezone=UTC"   # mandatory. Omitting it returns local time.
+    incremental_strategy: none
+    rate_limit:
+      free_tier_calls_per_day: 10000
+      per_hour: 5000
+      per_minute: 600
+    license: CC-BY 4.0, non-commercial use only; attribute "Weather data by Open-Meteo.com"
+    duplicate_key: [region_id, observed_at, variable, model]
+
+  # -------------------------------------------------------------------------
+  # F3 - INCREMENTAL: NASA FIRMS Near Real-Time (VIIRS NOAA-20 / NOAA-21)
+  # -------------------------------------------------------------------------
+  - name: firms_nrt_viirs
+    role: incremental
+    owner: NASA FIRMS / LANCE (NASA EOSDIS)
+    url: https://firms.modaps.eosdis.nasa.gov/api/area/
+    endpoint: "https://firms.modaps.eosdis.nasa.gov/api/area/csv/{MAP_KEY}/{SOURCE}/{BBOX}/{DAY_RANGE}/{DATE}"
+    access_method: rest
+    authentication: api_key            # MAP_KEY, read from .env, never in this file
+    format: csv
+    sensors: [VIIRS_NOAA20_NRT, VIIRS_NOAA21_NRT]
+    coverage: [2018-04-01, present]
+    update_policy: "about 3 hours after the satellite overpass"
+    api_constraints:
+      day_range_max: 5        # "last 7 days" therefore requires 2 calls
+      area_parameter: bbox_or_world   # country names are not accepted
+      rate_limit: "5000 transactions / 10 min; larger requests may count as several"
+      countries_endpoint: currently_unavailable   # do not design against it
+    historical_strategy: none
+    incremental_strategy:
+      watermark_field: observed_at        # max(acq_date || acq_time) in UTC
+      polling_frequency: "every 3 hours"
+      day_range_per_call: 2               # with a 1-day overlap
+      overlap_window_hours: 24
+      correction_window_months: 5         # NRT -> SP replacement
+    license: NASA EOSDIS open data; cite NASA FIRMS/LANCE
+    duplicate_key: [source, latitude, longitude, acq_date, acq_time, satellite]
+
+  # -------------------------------------------------------------------------
+  # F4 - INCREMENTAL: Open-Meteo Forecast API
+  # -------------------------------------------------------------------------
+  - name: open_meteo_forecast
+    role: incremental
+    owner: Open-Meteo
+    url: https://open-meteo.com/en/docs
+    endpoint: https://api.open-meteo.com/v1/forecast
+    access_method: rest
+    authentication: none
+    format: json
+    coverage: [now minus past_days, now plus forecast_days]
+    variables: [temperature_2m, relative_humidity_2m, precipitation, wind_speed_10m]
+    update_policy: hourly
+    historical_strategy: none
+    incremental_strategy:
+      polling_frequency: hourly
+      past_days: 7
+      forecast_days: 7
+      watermark_field: observed_at
+      overlap_window_hours: 48
+      timezone_param: "timezone=UTC"   # mandatory
+      seam_warning: >
+        This product and F2 do not share a model. Do not concatenate them
+        silently: either declare the seam and their overlap, or use the
+        Historical Forecast API so the model matches this endpoint.
+    rate_limit:
+      free_tier_calls_per_day: 10000
+      per_hour: 5000
+      per_minute: 600
+    license: CC-BY 4.0, non-commercial use only; attribute "Weather data by Open-Meteo.com"
+    duplicate_key: [region_id, observed_at, variable]
+
+# ---------------------------------------------------------------------------
+# Failure semantics (applies to every source above)
+# ---------------------------------------------------------------------------
+failure_handling:
+  idempotency: "INSERT ... ON CONFLICT DO NOTHING on duplicate_key"
+  transaction_scope: one_transaction_per_partition
+  watermark_rule: "advance the watermark only after the partition is committed"
+  run_tracking: "ingestion_run(status = started | committed | failed)"
+  recovery: >
+    If a poll fails, the next poll with overlapping day_range recovers the lost
+    window. The overlap is not redundancy: it is the recovery policy.
