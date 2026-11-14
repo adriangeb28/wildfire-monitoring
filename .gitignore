@@ -23,6 +23,7 @@ data/raw/*
 vendor/
 wheels/
 .pip-tmp/
+pip-*/
 
 # ----- Python -----
 __pycache__/

@@ -13,10 +13,29 @@ workshop inherits them, so changes here are expensive.
 | 6 | Indicator | Anomaly **conditioned on weather**: observed / expected given weather, expressed as a historical percentile | The assignment asks for "unusual relative to historical patterns and weather conditions". |
 | 7 | Claim boundary | Describes anomalies; **does not predict fires** | Required by the workshop guidelines ("do not over-claim"). |
 
+## Scope and coverage (confirmed against the Team Project Assignment)
+
+- **Team 3 may choose a global scope, a region, or Colombia.** Colombia is
+  therefore confirmed, and it is covered by all four sources: NASA FIRMS and
+  Open-Meteo are both listed as **global** sources in the assignment.
+- **Explicit exclusions** (required section of the report):
+  - **No US-only sources.** NWS observations/forecasts/alerts, NOAA GHCN-Daily,
+    NOAA Storm Events and USGS hazard products are out of scope: they contain no
+    data for Colombia. This is why the incremental weather source is the
+    Open-Meteo Forecast API and not NWS.
+  - **No Colombian national sources adopted at this stage.** Servicio Geológico
+    Colombiano, IDEAM and UNGRD are welcome as *additional* sources, but the
+    assignment requires their **programmatic access to be demonstrated in
+    Workshop 1 before they are adopted**. They are not part of the four
+    validated sources: adopting one without evidence would put 5 of the 20
+    points at risk.
+  - **No burned-area products** and no Global Forest Watch: not part of the
+    assigned source set.
+  - **No prediction.** The system describes anomalous activity; it does not
+    forecast fires.
+
 ## Open questions
 
-- [ ] Confirm the scope with the professor if the *Team Project Assignment*
-      mentions a required scope for Team 3.
 - [ ] Decide between ERA5 (0.25°) and ERA5-Land (0.1°) as the weather baseline
       (both are available; the choice must be documented and kept fixed).
 - [ ] Decide whether the recent weather comes from the Forecast API `past_days`
