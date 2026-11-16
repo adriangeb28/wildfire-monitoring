@@ -1,4 +1,4 @@
-"""Validate the anomaly indicator on the January 2024 fire episode.
+r"""Validate the anomaly indicator on the January 2024 fire episode.
 
 Method
 ------
@@ -8,10 +8,13 @@ Method
 3. Count detections per region for a fixed calendar window (1-31 January) in every
    available year -> the baseline is the same window in the previous years.
 4. Anomaly = observed / expected, plus the percentile of the observation inside the
-   historical distribution for that region.
-5. Weather-conditioned expectation: OLS of log1p(count) on [log1p(precip_7d),
-   vpd_max_c, temp_max_c] over all region-year observations, then compare the
-   observed count with the weather-adjusted prediction.
+   historical distribution of that region.
+5. Weather-conditioned expectation with REGION FIXED EFFECTS: the within-region
+   transformation removes the differences between departments (savanna vs Amazon,
+   land use, burning practice) and keeps only how a region's own weather in 2024
+   compares with its own history. Without fixed effects, the model confuses
+   "region with high VPD" with "region that burns", and the coefficient on VPD
+   comes out with the wrong sign.
 
 Usage:
     set PYTHONPATH=%CD%\vendor;$CD%\src
@@ -39,22 +42,21 @@ PANEL = ROOT / "data" / "raw" / "openmeteo" / "daily_panel.csv"
 FIGURES = ROOT / "docs" / "figures"
 OUT_CSV = ROOT / "workshop_1" / "indicator_validation_2024.csv"
 
-SENSOR = "VIIRS_NOAA20_SP"
-WINDOW_START = "01-01"
-WINDOW_END = "01-31"
+SENSOR = "VIIRS_NOAA20_SP"          # NOAA-20 only: 2018-04 onward, still active
+WINDOW_START, WINDOW_END = "01-01", "01-31"
 TARGET_YEAR = 2024
-FOCUS_REGIONS = ["Cundinamarca", "Bogota Capital District", "Meta", "Vichada", "Norte de Santander"]
+FOCUS_REGIONS = ["Cundinamarca", "Bogota Capital District", "Meta", "Vichada",
+                 "Norte de Santander", "Caqueta"]
+
+WEATHER_FEATURES = ["precip_mm", "vpd_max_c", "temp_max_c"]
 
 
 def load_year(year: int) -> pd.DataFrame | None:
     directory = HISTORY / str(year) / SENSOR
     if not directory.exists():
         return None
-    files = sorted(directory.glob("*.csv"))
-    if not files:
-        return None
     parts = []
-    for path in files:
+    for path in sorted(directory.glob("*.csv")):
         block = pd.read_csv(path)
         if not block.empty:
             parts.append(block)
@@ -62,8 +64,7 @@ def load_year(year: int) -> pd.DataFrame | None:
         return None
     frame = pd.concat(parts, ignore_index=True)
     frame["acq_date"] = pd.to_datetime(frame["acq_date"])
-    mask = frame.acq_date.dt.strftime("%m-%d").between(WINDOW_START, WINDOW_END)
-    frame = frame.loc[mask]
+    frame = frame.loc[frame.acq_date.dt.strftime("%m-%d").between(WINDOW_START, WINDOW_END)]
     if frame.empty:
         return None
     return assign_regions_fast(frame)
@@ -71,7 +72,10 @@ def load_year(year: int) -> pd.DataFrame | None:
 
 def region_counts() -> pd.DataFrame:
     rows = []
-    for year in sorted({int(p.name) for p in HISTORY.iterdir() if p.is_dir() and p.name.isdigit()}):
+    for directory in sorted(HISTORY.iterdir()):
+        if not (directory.is_dir() and directory.name.isdigit()):
+            continue
+        year = int(directory.name)
         frame = load_year(year)
         if frame is None:
             print(f"{year}: sin datos para la ventana")
@@ -84,7 +88,8 @@ def region_counts() -> pd.DataFrame:
         )
         counts["year"] = year
         rows.append(counts)
-        print(f"{year}: {len(frame):,} detecciones en la ventana -> {counts.detections.sum():,} en Colombia")
+        print(f"{year}: {len(frame):,} detecciones en la ventana -> "
+              f"{int(counts.detections.sum()):,} en Colombia")
     if not rows:
         raise SystemExit("no hay datos ingeridos para la ventana")
     return pd.concat(rows, ignore_index=True)
@@ -95,16 +100,40 @@ def weather_window() -> pd.DataFrame:
         return pd.DataFrame()
     panel = pd.read_csv(PANEL)
     panel["date"] = pd.to_datetime(panel["date"])
-    panel = panel[panel.date.dt.strftime("%m-%d").between(WINDOW_START, WINDOW_END)].copy()
-    panel["year"] = panel.date.dt.year
+    panel = panel.loc[panel.date.dt.strftime("%m-%d").between(WINDOW_START, WINDOW_END)].copy()
     if panel.empty:
         return pd.DataFrame()
+    panel["year"] = panel.date.dt.year
     return (
         panel.groupby(["region_id", "year"])
         .agg(precip_mm=("precip_mm", "sum"), vpd_max_c=("vpd_max_kpa", "mean"),
              temp_max_c=("temp_max_c", "mean"), rh_min_pct=("rh_min_pct", "mean"))
         .reset_index()
     )
+
+
+def fixed_effects_expected(data: pd.DataFrame) -> tuple[pd.Series, np.ndarray]:
+    """Within-region OLS: log1p(count) ~ weather, with a dummy per region.
+
+    Returns the prediction for every row and the coefficient vector.
+    """
+    frame = data.dropna(subset=["detections", *WEATHER_FEATURES]).copy()
+    frame["y"] = np.log1p(frame["detections"])
+    frame["x_precip"] = np.log1p(frame["precip_mm"])
+
+    frame["y_dm"] = frame["y"] - frame.groupby("region_id")["y"].transform("mean")
+    design = ["x_precip", "vpd_max_c", "temp_max_c"]
+    for column in design:
+        frame[column + "_dm"] = frame[column] - frame.groupby("region_id")[column].transform("mean")
+
+    X = frame[[c + "_dm" for c in design]].to_numpy()
+    beta, *_ = np.linalg.lstsq(X, frame["y_dm"].to_numpy(), rcond=None)
+
+    intercept = frame.groupby("region_id")["y"].mean()
+    fitted = frame[["region_id", "year"]].copy()
+    fitted["y_hat"] = fitted["region_id"].map(intercept) + X @ beta
+    fitted["expected_weather"] = np.expm1(fitted["y_hat"])
+    return fitted.set_index(["region_id", "year"])["expected_weather"], beta
 
 
 def main() -> int:
@@ -114,36 +143,43 @@ def main() -> int:
 
     merged = counts.merge(weather, on=["region_id", "year"], how="left") if not weather.empty else counts.copy()
 
-    baseline_years = sorted(y for y in merged.year.unique() if y < TARGET_YEAR)
-    if not baseline_years:
-        raise SystemExit("no hay años anteriores a 2024 para construir la baseline")
+    baseline_years = sorted(int(y) for y in merged.year.unique() if y < TARGET_YEAR)
+    if len(baseline_years) < 2:
+        raise SystemExit(f"se necesitan al menos 2 años de baseline, hay {baseline_years}")
     print(f"años de baseline: {baseline_years}")
 
+    history = merged[merged.year.isin(baseline_years)]
     base = (
-        merged[merged.year.isin(baseline_years)]
-        .groupby(["region_id", "region_name"])
-        .agg(expected=("detections", "mean"), expected_max=("detections", "max"),
-             n_years=("year", "nunique"))
+        history.groupby(["region_id", "region_name"])
+        .agg(expected=("detections", "mean"), n_years=("year", "nunique"))
         .reset_index()
     )
-    target = merged[merged.year == TARGET_YEAR][["region_id", "region_name", "detections",
-                                                 "frp_sum", "precip_mm", "vpd_max_c", "temp_max_c"]]
+    target = merged.loc[merged.year == TARGET_YEAR,
+                        ["region_id", "region_name", "detections", "frp_sum",
+                         "precip_mm", "vpd_max_c", "temp_max_c"]]
     result = target.merge(base, on=["region_id", "region_name"], how="left")
+    result["ratio"] = (result.detections / result.expected).replace([np.inf, -np.inf], np.nan)
 
-    # percentile of the 2024 observation inside the historical distribution
-    history = merged[merged.year.isin(baseline_years)]
-    percentiles, pos = [], []
+    percentiles = []
     for _, row in result.iterrows():
         series = history.loc[history.region_id == row.region_id, "detections"].sort_values()
-        if len(series) < 2 or pd.isna(row.detections):
-            percentiles.append(np.nan)
-            pos.append(np.nan)
-        else:
-            percentiles.append(float((series < row.detections).mean() * 100))
-            pos.append(float(series.rank(pct=True).iloc[-1] * 100))
+        percentiles.append(
+            float((series < row.detections).mean() * 100) if len(series) >= 2 else np.nan
+        )
     result["percentile"] = percentiles
 
-    result["ratio"] = (result.detections / result.expected).replace([np.inf, -np.inf], np.nan)
+    if not weather.empty:
+        expected_weather, beta = fixed_effects_expected(merged)
+        result["expected_weather"] = [
+            expected_weather.get((row.region_id, TARGET_YEAR), np.nan)
+            for row in result.itertuples()
+        ]
+        result["ratio_weather"] = (result.detections / result.expected_weather).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        print("\nmodelo con efectos fijos por región: log1p(detecciones) ~ log1p(lluvia) + VPD + T_max")
+        print(f"  coeficientes [log1p(lluvia), VPD, T_max] = {np.round(beta, 3)}")
+
     result = result.sort_values("ratio", ascending=False)
 
     print(f"\n=== Validación: enero {TARGET_YEAR} vs baseline {baseline_years[0]}-{baseline_years[-1]} ===")
@@ -151,61 +187,29 @@ def main() -> int:
           .head(12).to_string(index=False, float_format=lambda v: f"{v:,.2f}"))
 
     print("\n--- regiones de interés ---")
-    focus = result[result.region_name.isin(FOCUS_REGIONS)]
-    print(focus[["region_name", "detections", "expected", "ratio", "percentile", "precip_mm", "vpd_max_c"]]
+    cols = ["region_name", "detections", "expected", "ratio", "percentile",
+            "precip_mm", "vpd_max_c", "expected_weather", "ratio_weather"]
+    print(result.loc[result.region_name.isin(FOCUS_REGIONS), cols]
           .to_string(index=False, float_format=lambda v: f"{v:,.2f}"))
 
     national = result[["detections", "expected"]].sum()
     print(f"\nnacional: observado {national.detections:,.0f} vs esperado {national.expected:,.0f} "
           f"-> ratio {national.detections / national.expected:.2f}")
 
-    # ---- weather-conditioned expectation -----------------------------------
-    if not weather.empty and "vpd_max_c" in merged.columns:
-        model_data = merged.dropna(subset=["detections", "precip_mm", "vpd_max_c", "temp_max_c"]).copy()
-        if len(model_data) > 20:
-            X = np.column_stack([
-                np.ones(len(model_data)),
-                np.log1p(model_data.precip_mm),
-                model_data.vpd_max_c,
-                model_data.temp_max_c,
-            ])
-            y = np.log1p(model_data.detections)
-            beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-            print("\nmodelo clima-condicionado: log1p(detecciones) ~ log1p(lluvia_ventana) + VPD + T_max")
-            print(f"  coeficientes [intercepto, log1p(lluvia), VPD, T_max] = {np.round(beta, 3)}")
-
-            pred_rows = result.dropna(subset=["precip_mm", "vpd_max_c", "temp_max_c"])
-            Xp = np.column_stack([
-                np.ones(len(pred_rows)),
-                np.log1p(pred_rows.precip_mm),
-                pred_rows.vpd_max_c,
-                pred_rows.temp_max_c,
-            ])
-            result.loc[pred_rows.index, "expected_weather"] = np.expm1(Xp @ beta)
-            result["ratio_weather"] = (
-                result.detections / result.expected_weather
-            ).replace([np.inf, -np.inf], np.nan)
-
-            focus = result[result.region_name.isin(FOCUS_REGIONS)]
-            print("\n--- anomalía bruta vs condicionada por clima ---")
-            print(focus[["region_name", "detections", "expected", "ratio", "expected_weather", "ratio_weather"]]
-                  .to_string(index=False, float_format=lambda v: f"{v:,.2f}"))
-
     result["year"] = TARGET_YEAR
     result.to_csv(OUT_CSV, index=False)
     print(f"\nescrito: {OUT_CSV.relative_to(ROOT)}")
 
-    # ---- figure ------------------------------------------------------------
     plot = result.dropna(subset=["ratio"]).nlargest(12, "detections")
     fig, ax = plt.subplots(figsize=(10, 4.4))
     x = np.arange(len(plot))
     ax.bar(x - 0.2, plot.expected, width=0.4, label="expected (baseline mean)", color="#a6a6a6")
-    ax.bar(x + 0.2, plot.detections, width=0.4, label="observed, Jan 2024", color="#c0504d")
+    ax.bar(x + 0.2, plot.detections, width=0.4, label=f"observed, Jan {TARGET_YEAR}", color="#c0504d")
     ax.set_xticks(x)
     ax.set_xticklabels([n[:16] for n in plot.region_name], rotation=30, ha="right", fontsize=8)
-    ax.set_ylabel("detections in the 1-31 January window")
-    ax.set_title(f"January {TARGET_YEAR} observed vs baseline ({baseline_years[0]}-{baseline_years[-1]}), "
-                 f"VIIRS NOAA-20")
+    ax.set_ylabel("detections, 1-31 January window")
+    ax.set_title(f"January {TARGET_YEAR} vs baseline {baseline_years[0]}-{baseline_years[-1]} "
+                 f"(VIIRS NOAA-20)")
     ax.legend(fontsize=8)
     ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()

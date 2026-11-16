@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw" / "firms_history"
 BBOX = "-79.0,-4.5,-66.5,13.5"
 WINDOW_DAYS = 5
-PAUSE_SECONDS = 1.0
+PAUSE_SECONDS = 0.4
 
 
 def load_key() -> str:
