@@ -1,0 +1,5 @@
+source,records_profiled,coverage,format,key_finding
+F1 firms_archive,570605,2018-04 -> present,csv via API (SP),sensor change 2026 breaks naive baselines
+F2 open_meteo_historical,37125,2018 -> present,json (ERA5),local time unless timezone=UTC
+F3 firms_nrt_viirs,2220,last 5 days,csv (NRT),44.5% near-duplicates on a 1 km grid; 50% outside Colombia
+F4 open_meteo_forecast,462,last 7 days + 7 ahead,json,model seam with ERA5

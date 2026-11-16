@@ -68,3 +68,93 @@ is the empirical proof required for the baseline-per-sensor section.
 | `openmeteo_historical_era5_bogota_*.json` | Unmodified ERA5 response |
 | `openmeteo_forecast_bogota_*.json` | Unmodified forecast response |
 | `colombia_sample_profile.csv` | First 200 rows, working copy |
+| `regions_centroids.csv` | 33 region centroids (weather query input) |
+| `profile_summary.csv` | One-row-per-source summary exported by the notebook |
+
+---
+
+# Measured volumes and cross-source results
+
+All figures produced by `notebooks/01_source_profiling.ipynb`
+(18 code cells, validated top-to-bottom with 0 failures).
+
+## F1 — archive volume (2024, Colombia bbox)
+
+| Sensor | 5-day windows | Detections |
+|---|---|---|
+| `VIIRS_NOAA20_SP` | 74 | **311 832** |
+| `VIIRS_SNPP_SP` | 30 (pull in progress) | **257 412** |
+| **Total so far** | | **569 244** |
+
+`MODIS_SP` is queued. First conclusion for the ingestion contract: the historical
+volume is in the **hundreds of thousands of rows per sensor-year**, so the
+partitioning decision (5-day windows, one file each, cached) is not cosmetic.
+
+## Monthly detections per sensor (2024)
+
+| Month | NOAA-20 SP | S-NPP SP |
+|---|---|---|
+| 2024-01 | 70 345 | 71 360 |
+| 2024-02 | 54 920 | 58 157 |
+| 2024-03 | 75 636 | 81 686 |
+| 2024-04 | 41 388 | 42 537 |
+| 2024-05 | 4 122 | 3 672 |
+| 2024-06 | 2 519 | 1 361 |
+| 2024-07 → 2024-12 | 4 526 … 16 467 | 0 (not yet downloaded) |
+
+Two things this table proves:
+
+1. **Strong seasonality**: the January–April dry season carries 90 % of the year's
+   detections; May–June collapses to a few thousand. Any "anomaly" computed
+   against an annual mean is therefore meaningless — the baseline must be a
+   *calendar window*.
+2. **The two VIIRS sensors track each other closely** in the overlapping months
+   (within ~5–8 %), which is precisely the evidence needed to justify pooling
+   them after harmonisation — and the reason the zeros from July onward must be
+   read as *not yet downloaded*, never as *no fires*.
+
+## Weather panel (F2)
+
+36 135 region-days = **33 regions × 1 095 days**, 2018-01-01 → 2024-08-31,
+**0 nulls** in every variable. Pull still running towards 2026-11.
+
+| Variable | min | mean | max |
+|---|---|---|---|
+| `temp_max_c` | 7.3 | 28.44 | 41.1 |
+| `rh_min_pct` | 8.0 | 62.38 | 96.0 |
+| `precip_mm` | 0.0 | 8.13 | 229.0 |
+| `wind_max_kmh` | 2.0 | 9.98 | 48.6 |
+| `vpd_max_kpa` | 0.08 | 1.60 | 7.11 |
+
+### The indicator's core assumption, tested (nacional, 2024)
+
+Correlation of daily detections with weather:
+
+| Variable | Correlation with detections |
+|---|---|
+| `vpd_max_kpa` (déficit de presión de vapor) | **+0.830** |
+| `precip_7d` (lluvia acumulada 7 días) | **−0.689** |
+| `temp_max_c` | +0.722 |
+| `precip_mm` (del día) | −0.604 |
+
+This is the quantitative justification for the weather-conditioned indicator: dry,
+high-VPD days carry far more detections, so a raw count comparison between two
+regions (or two years) with different rainfall is not an anomaly, it is weather.
+
+## Overlap verification — 5 candidate pairs (real records)
+
+NOAA-20 / NOAA-21 detections of the same fire (same day, ≤ 2 km):
+
+| date | N20 time | N21 time | N20 FRP | N21 FRP | distance (km) | N20 conf | N21 conf |
+|---|---|---|---|---|---|---|---|
+| 2026-11-10 | 07:01 | 06:03 | 2.48 | 2.70 | 0.07 | n | n |
+| 2026-11-10 | 06:44 | 06:03 | 3.76 | 2.46 | 0.16 | n | n |
+| 2026-11-10 | 06:24 | 06:03 | 1.21 | 2.43 | 0.30 | n | n |
+| 2026-11-10 | 06:05 | 06:03 | 1.97 | 1.92 | 0.26 | n | n |
+| 2026-11-10 | 06:41 | 06:03 | 1.50 | 1.50 | 0.12 | n | n |
+
+What differs in every pair: the **timestamp** (different overpass), the
+**position** (up to ~300 m of geolocation spread), the **FRP** (different pixel
+footprint), and sometimes the **confidence**. What does not exist in the source:
+any identifier. The identifier has to be constructed by the ingestion layer.
+

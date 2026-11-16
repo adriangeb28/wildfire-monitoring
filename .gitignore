@@ -6,6 +6,7 @@ secrets/
 # ----- Raw data (landing zone) -----
 # Keep the folder, ignore the contents. Small samples live in workshop_1/samples/
 data/raw/*
+data/reference/*
 !data/raw/.gitkeep
 
 # Large satellite / raster artefacts are never committed
@@ -46,3 +47,6 @@ Thumbs.db
 *.log
 /tmp/
 .cache/
+
+!data/reference/.gitkeep
+

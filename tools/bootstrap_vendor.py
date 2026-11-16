@@ -36,6 +36,8 @@ PACKAGES = [
     "certifi",
     "idna",
     "charset-normalizer",
+    "shapely",
+    "matplotlib",
 ]
 
 PY_TAG = f"cp{sys.version_info.major}{sys.version_info.minor}"
