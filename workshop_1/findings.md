@@ -72,7 +72,10 @@ baseline-per-sensor section needs.
 Everything in this half comes from `notebooks/01_source_profiling.ipynb`: 18 code cells, run from top
 to bottom without failures.
 
-## F1: archive volume for 2024 (Colombia bounding box)
+## F1: archive volume, 2024 partition (Colombia bounding box)
+
+Seventy-three five-day windows, from 2024-01-01 to 2025-01-03, so the totals below
+include three days of 2025.
 
 | Sensor | Detections | Inside Colombia | Inside % | ΣFRP (MW) | FRP mean (MW) |
 |---|---|---|---|---|---|

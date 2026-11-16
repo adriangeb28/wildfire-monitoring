@@ -139,7 +139,7 @@ into fire events.""",
     (
         "code",
         '''exact = f3.duplicated(subset=["latitude", "longitude", "acq_date", "acq_time", "satellite"]).sum()
-print(f"duplicados exactos                              : {exact}")
+print(f"exact duplicates                              : {exact}")
 
 duplicate_scan = []
 for decimals in (3, 2, 1):
@@ -167,13 +167,13 @@ Those 436 rows are exactly the night detections.""",
         '''f3["acq_time_str"] = f3.acq_time.astype(int).astype(str)
 f3["acq_time_digits"] = f3.acq_time_str.str.len()
 
-print("distribución de dígitos en acq_time:")
+print("how many digits does acq_time have:")
 print(f3.acq_time_digits.value_counts().sort_index().to_string())
 print()
-print("cruce con daynight (las 3 cifras son las nocturnas):")
+print("cross-tab with daynight (the 3-digit rows are the night ones):")
 print(pd.crosstab(f3.acq_time_digits, f3.daynight).to_string())
 print()
-print("ejemplos de acq_time de 3 cifras:", f3.loc[f3.acq_time_digits == 3, "acq_time"].head(6).tolist())''',
+print("examples of 3-digit acq_time values:", f3.loc[f3.acq_time_digits == 3, "acq_time"].head(6).tolist())''',
     ),
     (
         "md",
@@ -188,7 +188,7 @@ One row has an FRP of zero, which cannot be a fire detection, and 86 sit below
 print("FRP < 1 MW    :", int((f3.frp < 1).sum()))
 print("FRP statistics:", {k: round(float(v), 2) for k, v in f3.frp.describe().items()})
 print()
-print("ejemplo de registro con FRP = 0:")
+print("a record with FRP = 0:")
 print(f3.loc[f3.frp == 0].head(2).to_string(index=False))''',
     ),
     (
@@ -201,11 +201,11 @@ normalising silently keeps or drops everything.""",
     ),
     (
         "code",
-        '''print("confianza (VIIRS):", f3.confidence.value_counts().to_dict())
-print("¿es numérica?     :", pd.api.types.is_numeric_dtype(f3.confidence))
+        '''print("confidence values (VIIRS):", f3.confidence.value_counts().to_dict())
+print("is the column numeric? :", pd.api.types.is_numeric_dtype(f3.confidence))
 print()
-print("Si aplicáramos 'confidence > 50' a VIIRS, sobrevivirían:",
-      int((pd.to_numeric(f3.confidence, errors="coerce") > 50).sum()), "filas de", len(f3))''',
+print("Applying 'confidence > 50' to VIIRS would keep:",
+      int((pd.to_numeric(f3.confidence, errors="coerce") > 50).sum()), "rows out of", len(f3))''',
     ),
     (
         "md",
@@ -220,13 +220,13 @@ point-in-polygon test shows that half the rows are fires somewhere else.""",
         '''from normalization.regions import assign_regions, load_regions
 
 regions = load_regions()
-print("regiones cargadas:", len(regions))
+print("regions loaded:", len(regions))
 
 f3 = assign_regions(f3)
 inside = int(f3.region_id.notna().sum())
-print(f"detecciones totales    : {len(f3)}")
-print(f"dentro de Colombia     : {inside} ({inside / len(f3):.1%})")
-print(f"FUERA (países vecinos) : {len(f3) - inside} ({(len(f3) - inside) / len(f3):.1%})")''',
+print(f"detections total     : {len(f3)}")
+print(f"inside Colombia      : {inside} ({inside / len(f3):.1%})")
+print(f"OUTSIDE (neighbouring countries) : {len(f3) - inside} ({(len(f3) - inside) / len(f3):.1%})")''',
     ),
     (
         "code",
@@ -237,10 +237,10 @@ print(f"FUERA (países vecinos) : {len(f3) - inside} ({(len(f3) - inside) / len(
     .sort_values("detections", ascending=False)
     .round(1)
 )
-print("Top 10 departamentos por detecciones (5 días):")
+print("Top 10 departments by detections (5 days):")
 print(top_regions.head(10).to_string())
 print()
-print("regiones sin detecciones:", 33 - top_regions.shape[0])''',
+print("regions with no detections:", 33 - top_regions.shape[0])''',
     ),
     (
         "md",
@@ -271,7 +271,7 @@ if frames:
     profile_table(f1, "F1 FIRMS archive 2024")
 else:
     f1 = pd.DataFrame()
-    print("Sin datos históricos todavía: ejecuta tools/pull_history.py 2024 VIIRS_NOAA20_SP")''',
+    print("No archive data yet: run tools/pull_history.py 2024 VIIRS_NOAA20_SP")''',
     ),
     (
         "md",
@@ -280,7 +280,11 @@ else:
 Suomi NPP stopped on 2026-11-02 and Terra MODIS has been in standby since March
 2026. A baseline that mixes sensors measures the instruments. That is why the
 baseline here is built per sensor, and the cell below shows what happens if you
-forget it.""",
+forget it.
+
+One detail about the numbers that follow: the pull runs in 5-day windows from
+2024-01-01, so the 73rd window ends on 2025-01-03. The totals include those three
+extra days, which is why the last point of the chart is small.""",
     ),
     (
         "code",
@@ -294,16 +298,16 @@ forget it.""",
         .astype(int)
     )
     comparison.index = comparison.index.astype(str)
-    print("Detecciones por mes y sensor (Colombia, bbox):")
+    print("Detections per month and sensor (Colombia bbox):")
     print(comparison.to_string())
     print()
-    print("Totales anuales y ratio entre sensores:")
+    print("Totals per sensor and the ratio between them:")
     totals = f1.groupby("sensor").size()
     print(totals.to_string())
 
     ax = comparison.plot(figsize=(11, 4), marker="o")
-    ax.set_title("Detecciones mensuales por sensor — Colombia 2024")
-    ax.set_ylabel("detecciones")
+    ax.set_title("Monthly detections per sensor, Colombia 2024")
+    ax.set_ylabel("detections")
     ax.set_xlabel("")
     plt.tight_layout()
     plt.savefig(FIGURES / "sensor_comparison_2024.png", dpi=140)
@@ -324,11 +328,11 @@ if panel_path.exists():
     weather = pd.read_csv(panel_path)
     profile_table(weather, "F2 Open-Meteo ERA5 daily panel")
     print()
-    print("rango de fechas:", weather.date.min(), "->", weather.date.max())
-    print("regiones       :", weather.region_id.nunique())
+    print("date range:", weather.date.min(), "->", weather.date.max())
+    print("regions      :", weather.region_id.nunique())
 else:
     weather = pd.DataFrame()
-    print("Sin panel climático: ejecuta tools/pull_weather.py --mode historical")''',
+    print("No weather panel yet: run tools/pull_weather.py --mode historical")''',
     ),
     (
         "code",
@@ -336,7 +340,7 @@ else:
     summary = weather[["temp_max_c", "temp_min_c", "rh_min_pct", "precip_mm", "wind_max_kmh", "vpd_max_kpa"]].describe().T
     print(summary.round(2).to_string())
     print()
-    print("nulos por variable:")
+    print("nulls per variable:")
     print(weather[["temp_max_c", "rh_min_pct", "precip_mm", "vpd_max_kpa"]].isna().sum().to_string())''',
     ),
     (
@@ -364,10 +368,10 @@ wrong and it is better to find out now.""",
 
     if len(merged) > 30:
         merged["precip_7d"] = merged.precip_mm.rolling(7, min_periods=1).sum()
-        print("Correlación detecciones vs clima (nacional, 2024):")
+        print("Correlation between detections and weather (national, 2024):")
         print(merged[["detections", "precip_mm", "precip_7d", "vpd_max_kpa", "temp_max_c"]].corr()["detections"].round(3).to_string())
         ax = merged.plot.scatter(x="precip_7d", y="detections", alpha=0.5, figsize=(6, 4))
-        ax.set_title("Detecciones vs precipitación acumulada 7 días (2024)")
+        ax.set_title("Detections against 7-day accumulated precipitation (2024)")
         plt.tight_layout()
         plt.savefig(FIGURES / "detections_vs_precip.png", dpi=140)
         plt.show()''',
@@ -387,10 +391,10 @@ if forecast_files:
     f4 = pd.read_csv(forecast_files[-1])
     profile_table(f4, "F4 Open-Meteo forecast")
     print()
-    print("rango:", f4.date.min(), "->", f4.date.max(), "| regiones:", f4.region_id.nunique())
+    print("range:", f4.date.min(), "->", f4.date.max(), "| regions:", f4.region_id.nunique())
 else:
     f4 = pd.DataFrame()
-    print("Sin datos de forecast: ejecuta tools/pull_weather.py --mode forecast")''',
+    print("No forecast data yet: run tools/pull_weather.py --mode forecast")''',
     ),
     (
         "code",
@@ -402,11 +406,11 @@ else:
         a = f4[f4.date.isin(overlap_dates)].groupby("date").temp_max_c.mean()
         b = weather[weather.date.isin(overlap_dates)].groupby("date").temp_max_c.mean()
         diff = (a - b).round(2)
-        print(f"días en solape: {len(overlap_dates)}")
-        print("diferencia de temp_max (°C) entre forecast y ERA5:")
+        print(f"overlapping days: {len(overlap_dates)}")
+        print("temp_max difference (°C) between forecast and ERA5:")
         print(diff.to_string())
     else:
-        print("Sin días de solape entre F4 y F2")''',
+        print("No overlapping days between F4 and F2")''',
     ),
     (
         "md",
@@ -444,7 +448,7 @@ Candidate pairs are NOAA-20 and NOAA-21 detections on the same day, within about
     return pd.DataFrame(pairs)
 
 
-print("Pares candidatos NOAA-20 / NOAA-21 (mismo incendio, dos registros):")
+print("Candidate pairs, NOAA-20 and NOAA-21 (one fire, two records):")
 print(overlap_pairs(f3).to_string(index=False))''',
     ),
     (
@@ -473,7 +477,7 @@ One row per source, which is what the report cites.""",
 summary.to_csv(ROOT / "workshop_1" / "profile_summary.csv", index=False)
 print(summary.to_string(index=False))
 print()
-print("escrito:", ROOT / "workshop_1" / "profile_summary.csv")''',
+print("written:", ROOT / "workshop_1" / "profile_summary.csv")''',
     ),
     (
         "md",

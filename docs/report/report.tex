@@ -153,7 +153,7 @@ F3, Colombia bbox, last 5 days, NOAA-21 & 1\,149 rows & second incremental senso
 F3, \code{VIIRS\_SNPP\_NRT}, same bbox & HTTP 200, header only & Suomi NPP ceased on 2026-11-02 \\
 F3, historical date 2024-01-22 on \code{*\_NRT} & 0 rows & NRT is a recent-window product \\
 F1, \code{VIIRS\_NOAA20\_SP}, 2024-01-22 & 16\,673 rows & the \code{*\_SP} sources do serve history \\
-F1, full year 2024, three sensors & 703\,633 rows & real volume for the contract \\
+F1, 2024 partition (73 windows, to 2025-01-03), three sensors & 703\,633 rows & real volume for the contract \\
 F2, ERA5, Bogotá, 10 days, \code{timezone=UTC} & 240 hourly rows, 0 nulls & weather series works, timezone confirmed \\
 F4, forecast, 33 centroids, \code{past\_days=7} & 462 region-days & multi-coordinate batching works \\
 \bottomrule
@@ -220,7 +220,7 @@ Suomi NPP stopped producing new data on 2 November 2026. Its archive is still th
 longer an incremental source. Terra MODIS has been in standby since March 2026 and Aqua MODIS is being
 retired. Any historical baseline therefore mixes instruments with different detection capabilities,
 and the assignment asks for that effect to be documented with numbers. We measured it on the
-complete 2024 archive.
+2024 archive.
 
 \begin{table}[h]
 \centering
@@ -580,7 +580,7 @@ code for this stage.
 \section{Conclusions, and what we do not know yet}
 
 The four sources work. We queried each one for real and kept the responses, and the archive alone
-accounts for 703\,633 detections in 2024, which is enough volume to justify pulling it in partitions
+accounts for 703\,633 detections in the 2024 partition, which is enough volume to justify pulling it in partitions
 instead of in one gulp.
 
 The instrument discontinuity has a number attached to it: 8.8$\times$ in count and
