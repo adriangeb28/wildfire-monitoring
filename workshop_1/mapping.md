@@ -1,10 +1,9 @@
-# Canonical Mapping — Wildfire Monitoring
+# Canonical mapping
 
-Maps every source field onto the canonical event model, and the hazard-specific
-attributes onto the domain tables in [`sql/schema.sql`](../sql/schema.sql).
-
-Status: **draft** — fill the `TODO` rows after profiling the real responses
-(`notebooks/01_source_profiling.ipynb`).
+How each source field lands in the canonical event model, and how the hazard-specific attributes land
+in the domain tables of [`sql/schema.sql`](../sql/schema.sql). This is the Workshop 1 version: the
+tables below were filled against the real responses, and the ER draft lives in
+`docs/figures/er_diagram.png`.
 
 ## Canonical fields
 
@@ -18,7 +17,7 @@ Status: **draft** — fill the `TODO` rows after profiling the real responses
 | `severity` + `severity_unit` | double + text | FRP in MW for detections. |
 | `raw_reference` | text | Path of the unmodified response + line number or record id. |
 
-## F1 — NASA FIRMS archive (VIIRS / MODIS)
+## F1: NASA FIRMS archive (VIIRS and MODIS)
 
 | Source field | Canonical field | Rule |
 |---|---|---|
@@ -26,42 +25,44 @@ Status: **draft** — fill the `TODO` rows after profiling the real responses
 | `acq_date` + `acq_time` | `observed_at` | `acq_time` is an integer HHMM **without zero padding** (`3` = 00:03). Build UTC timestamp explicitly. |
 | `frp` | `severity` | MW |
 | `brightness` (MODIS) / `bright_ti4` (VIIRS) | `fire_detection.brightness` / `.bright_ti4` | K |
-| `confidence` | `fire_detection.confidence_raw` | MODIS: integer 0–100. VIIRS: `l` / `n` / `h` |
-| — | `fire_detection.confidence_norm` | Harmonise to 0–100 (document the mapping used) |
+| `confidence` | `fire_detection.confidence_raw` | MODIS: integer 0-100. VIIRS: `l` / `n` / `h` |
+| - | `fire_detection.confidence_norm` | Harmonise to 0-100 (document the mapping used) |
 | `satellite`, `instrument` | `fire_detection.satellite`, `.instrument` | as delivered |
 | `daynight`, `scan`, `track`, `version` | `fire_detection.*` | as delivered |
 
-## F3 — NASA FIRMS NRT (VIIRS NOAA-20 / NOAA-21)
+## F3: NASA FIRMS NRT (VIIRS NOAA-20 and NOAA-21)
 
-Same mapping as F1, with `source = firms_nrt_viirs` and
-`product_version = 'NRT'`. NOTE: NRT records are replaced by SP records with a
-~5-month lag, so the same detection can change after publication.
+Same mapping as F1, with `source = firms_nrt_viirs` and `product_version = 'NRT'`. One thing to keep
+in mind: NRT records are replaced by SP records with a lag of about five months, so the same detection
+can change after it was published.
 
-## F2 / F4 — Open-Meteo (historical and forecast)
+## F2 and F4: Open-Meteo, historical and forecast
 
-**These sources do not fit the discrete event model.** A weather value is a
-sample of a continuous field at a location and time, not a discrete event. Only
-`observed_at`, `latitude`, `longitude` (region centroid) and `raw_reference` map
-onto `event`; the measurements live in `weather_observation`.
+These two do not fit the discrete event model, and forcing them in breaks it. A weather value is a
+sample of a continuous field at a place and a time. Only `observed_at`, `latitude`, `longitude` (the
+region centroid) and `raw_reference` map onto `event`; the measurements live in
+`weather_observation`, one row per variable.
 
 | Source field | Target | Rule |
 |---|---|---|
 | `hourly.time` | `weather_observation.observed_at` | Force `timezone=UTC` in the request. |
 | `hourly.<variable>` | `weather_observation.value` | One row per variable (long format). |
-| — | `weather_observation.unit` | `°C`, `mm`, `km/h`, `kPa`, `%` |
-| — | `weather_observation.model` | `era5`, `era5_land`, or forecast model |
+| - | `weather_observation.unit` | `°C`, `mm`, `km/h`, `kPa`, `%` |
+| - | `weather_observation.model` | `era5`, `era5_land`, or forecast model |
 | `latitude`/`longitude` of request | `region_id` | Join on the region centroid; the value is a centroid approximation, not an area average. |
 
 ## Hazard-specific attributes
 
-- **`fire_detection`**: brightness, bright_ti4, bright_ti5, frp, confidence_raw,
-  confidence_norm, satellite, instrument, scan, track, daynight, product_version.
-- **`fire_event`** (grouping): cluster detections in space and time.
-  - `eps_space` ≈ 1.5–2 km (VIIRS footprint 375 m; cross-sensor geolocation spread ~1 km)
-  - `eps_time` ≈ 24 h with connected-component chaining (a fire burns for days)
-  - `event_id` = hash(rounded centroid + first_seen)
-  - Report **three** metrics: detection count, grouped event count, ΣFRP.
-- **`region`**: 33 units, DANE Marco Geoestadístico Nacional.
+`fire_detection` carries brightness, bright_ti4, bright_ti5, frp, confidence_raw, confidence_norm,
+satellite, instrument, scan, track, daynight and product_version.
+
+`fire_event` is where detections get grouped in space and time. The proposed parameters are
+`eps_space` around 1.5 to 2 km, because the VIIRS footprint is 375 m but cross-sensor geolocation
+spread reaches about 1 km, and `eps_time` around 24 h with connected-component chaining, because a
+fire burns for days. The identifier is a hash of the rounded centroid plus `first_seen`. We report
+detection count, grouped event count and total FRP, and we say which of the three the indicator uses.
+
+`region` holds the 33 units, from DANE's Marco Geoestadístico Nacional.
 
 ## Normalisation rules
 
@@ -70,12 +71,11 @@ onto `event`; the measurements live in `weather_observation`.
 | Timestamps | UTC, `TIMESTAMPTZ`. No naive datetimes anywhere. |
 | Coordinates | WGS84, decimal degrees. Validate against region polygons (the Colombia bbox includes 5 neighbouring countries). |
 | Severity | FRP in MW; scale documented per source. |
-| Confidence | Normalised to 0–100 with a documented mapping table. |
+| Confidence | Normalised to 0-100 with a documented mapping table. |
 | Units | Declared per column; never inferred at read time. |
 
-## TODO
+## Still open
 
-- [ ] Fill exact field lists after downloading real responses.
-- [ ] Document the `l/n/h` → 0–100 mapping actually used.
-- [ ] Add the ER diagram (draft) to `docs/`.
-- [ ] Confirm the `event_id` hash inputs.
+The `l`/`n`/`h` to 0-100 mapping is written down but has not been validated against labelled fires,
+and the clustering thresholds are values we proposed and never tuned. Both belong to
+Workshop 2.

@@ -20,11 +20,11 @@
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
 \title{\textbf{Wildfire Monitoring}\\[2pt]
-\large Multi-source ingestion and analysis system for anomalous fire activity in Colombia\\[10pt]
-\normalsize Workshop No.~1 --- Hazard Definition, Source Validation, and Data Contract}
+\large A multi-source system for measuring anomalous fire activity in Colombia\\[10pt]
+\normalsize Workshop No.~1: hazard definition, source validation and data contract}
 \author{César Ospina (20222020059) \and Santiago Alfonso (20222020093) \and Adrián Espinosa (20222020104)\\
-\normalsize Team 3 --- Computer Engineering, Universidad Distrital Francisco José de Caldas\\
-\normalsize Data Analysis Programming --- Semester 2026-II}
+\normalsize Team 3, Computer Engineering, Universidad Distrital Francisco José de Caldas\\
+\normalsize Data Analysis Programming, semester 2026-II}
 \date{}
 
 \begin{document}
@@ -32,78 +32,82 @@
 
 \begin{abstract}
 \noindent
-This report formalises the first stage of a multi-source system that monitors vegetation fires in
-Colombia and decides whether current fire activity is unusual relative to historical patterns
-\emph{and} weather conditions. Four sources were selected, queried for real and profiled:
-the NASA FIRMS active-fire archive, the Open-Meteo ERA5 historical weather API, the NASA FIRMS
-near-real-time VIIRS stream (NOAA-20 and NOAA-21), and the Open-Meteo forecast API. The four
-sources were validated on \textbf{703\,633} archived detections and \textbf{49\,170} region-days of
-weather data. The profiling produced nine concrete data-quality problems, five verified
-cross-sensor record pairs describing the same real event, and one quantified instrument
-discontinuity: VIIRS detects \textbf{8.8$\times$} more records than MODIS for the same period, so a
-baseline that mixes sensors manufactures an anomaly that does not exist. Only \textbf{33.7\,\%}
-of the records returned by the Colombian bounding box are actually Colombian. These findings drive
-the canonical mapping, the domain tables, and the ingestion contract presented here.
+This is the first stage of a system that watches vegetation fires in Colombia and asks whether
+what is burning right now is more than the season and the weather would explain. We picked four
+sources, queried all of them for real, and profiled what came back: the NASA FIRMS active-fire
+archive, the Open-Meteo ERA5 historical weather API, the FIRMS near-real-time VIIRS stream
+(NOAA-20 and NOAA-21), and the Open-Meteo forecast API. The evidence rests on \textbf{703\,633}
+archived detections and \textbf{108\,735} region-days of weather. Profiling them turned up nine
+data-quality problems, five pairs of records that describe the same fire from two sensors, and one
+instrument discontinuity we could put a number on: VIIRS returns \textbf{8.8$\times$} more records
+than MODIS over the same period, so a baseline that mixes the two invents an anomaly. We also found
+that only \textbf{33.7\,\%} of what the Colombian bounding box returns is actually Colombian. Those
+findings shape the mapping, the tables and the ingestion contract that follow.
 \end{abstract}
 
 \tableofcontents
 
 \section{Project overview}
 
-\subsection{Motivation}
-Colombia burns every dry season, and the operational question is not \emph{whether} there are fires
-but \emph{where the activity is abnormal}. A single reading --- ``1\,200 detections today'' --- is
-useless: January carries tens of thousands of detections nationally, May carries a few thousand.
-The number only becomes information when compared with the same calendar window in previous years
-\emph{and} with the weather that makes those days flammable.
+\subsection{Why this project}
 
-\subsection{Goal}
-From a data-engineering perspective: build a reproducible pipeline that ingests four heterogeneous
-sources, maps them onto one canonical event model, and keeps them fresh with an explicit
-watermark design. From an analytical perspective: produce a per-region indicator of anomalous fire
-activity that is meaningful across seasons and comparable between departments.
+Colombia burns every dry season. The question an emergency office actually asks is narrower than
+``are there fires'': it asks where the activity has gone past what the season and the weather
+justify. A single figure cannot answer that. January normally carries tens of thousands of
+detections nationally and May carries a few thousand, so ``1\,200 detections today'' means nothing
+on its own. The number only turns into information when it sits next to the same calendar window
+from earlier years and next to the rainfall and dryness of the days involved.
+
+\subsection{What we set out to build}
+
+On the data-engineering side, a pipeline that pulls four unlike sources, lands them in one event
+model, and can be re-run without duplicating rows or silently losing a window. On the analytical
+side, one indicator per department that still means something in February and in September, and
+that can be compared between departments with different climates.
 
 \subsection{Scope}
-\begin{itemize}
-  \item \textbf{Geographic:} Colombia, 33 administrative units (32 departments + Bogotá D.C.),
-        aggregated per region.
-  \item \textbf{Temporal:} 2018-01-01 to present as the primary baseline (VIIRS NOAA-20 is the only
-        sensor that is both long-lived and still producing data); 2000/2012 to present as per-sensor
-        long-term context.
-  \item \textbf{Analytical:} ``today'' (last 24~h), ``last 7 days'', the historical average for the
-        same calendar window, and the weather context.
-\end{itemize}
 
-\subsection{Explicit exclusions}
-\begin{itemize}
-  \item \textbf{No US-only sources.} NWS observations/forecasts/alerts, NOAA GHCN-Daily and
-        NOAA Storm Events contain no data for Colombia; this is why the incremental weather source
-        is the Open-Meteo forecast API and not NWS.
-  \item \textbf{No Colombian national sources adopted at this stage.} IDEAM, UNGRD and the
-        Servicio Geológico Colombiano are welcome as additional sources, but their programmatic
-        access must be demonstrated before adoption. They are not part of the four validated sources.
-  \item \textbf{No burned-area products} and no Global Forest Watch: outside the assigned source set.
-  \item \textbf{No prediction.} The system describes anomalous activity; it does not forecast fires.
-\end{itemize}
+We work on Colombia, at the level of 33 administrative units (32 departments plus Bogotá D.C.), and
+aggregate everything per region. The primary baseline runs from 2018-01-01 to the present, because
+VIIRS NOAA-20 is the only sensor that is both long-lived and still transmitting; MODIS from 2000 and
+S-NPP from 2012 are used as long-term context, always per sensor. ``Current situation'' means the
+last 24 hours and the last 7 days, read against the historical average for the same calendar window
+and against the weather.
+
+\subsection{What we deliberately left out}
+
+Sources that only cover the United States. NWS observations, forecasts and alerts, NOAA GHCN-Daily
+and the Storm Events database contain nothing for Colombia, which is the reason the incremental
+weather source is the Open-Meteo forecast API and not NWS.
+
+National Colombian services. IDEAM, UNGRD and the Servicio Geológico Colombiano would fit well, but
+the assignment asks for their programmatic access to be demonstrated before they are adopted, and we
+did not want to promise a fifth source we had not tested. They are the obvious next addition.
+
+Burned-area products and Global Forest Watch, which fall outside the assigned set. And prediction:
+this system describes what is happening, it does not forecast fires.
 
 \subsection{Constraints}
-Free and openly accessible sources only; API keys in environment variables and never in the
-repository; all documentation in English; rate limits respected and every download cached.
 
-\section{Hazard definition}
+Free and openly accessible sources only. Keys in environment variables, never in the repository.
+Documentation in English. Rate limits respected and every download cached, because the historical
+part of this project is large enough that re-downloading it would be both slow and rude.
 
-\paragraph{Phenomenon.} Vegetation fires observed as satellite thermal anomalies. The unit of
-observation is a \textbf{hotspot detection}: a pixel flagged as thermally anomalous. It is not a
-fire as a discrete entity, and several detections may describe the same fire.
+\section{What the hazard is and how it is measured}
 
-\paragraph{Severity measure.} \textbf{Fire Radiative Power (FRP)}, in \textbf{MW}, with brightness
-temperature (K) as a secondary measure. The \texttt{confidence} field is a quality filter, not a
-severity measure, and is never mixed with FRP.
+\paragraph{The observation.} A vegetation fire reaches us as a thermal anomaly in a satellite pixel.
+The unit of observation is therefore a hotspot detection, and not a fire. Several detections, from
+different overpasses and different sensors, can describe the same fire, and one detection is not an
+event. This distinction is the source of most of the difficulty in the rest of the report.
 
-\paragraph{Current situation.} Detections in the last 24 hours and in the last 7 days, compared
-against the historical average for the same calendar window and conditioned on weather.
+\paragraph{Severity.} Fire Radiative Power (FRP) in MW, with brightness temperature in K as a
+secondary reading. The \texttt{confidence} field is a quality flag and never enters severity
+calculations; mixing the two produces numbers that look plausible and mean nothing.
 
-\section{Sources}
+\paragraph{Present situation.} Detections of the last 24 hours and of the last 7 days, compared
+against the same calendar window in previous years and against the weather of those days.
+
+\section{The four sources}
 
 \begin{table}[h]
 \centering
@@ -121,23 +125,21 @@ F4 & Incremental & Open-Meteo Forecast & REST & JSON; no key; 10\,000 calls/day,
 \caption{The four validated sources.}
 \end{table}
 
-\paragraph{Licensing and attribution.} NASA FIRMS data are openly available through NASA EOSDIS and
-must be cited as such. Open-Meteo data are distributed under \textbf{CC-BY 4.0} and its free tier is
-restricted to non-commercial use --- satisfied here, as this is public university research --- with
-attribution ``Weather data by Open-Meteo.com'' and ERA5/Copernicus. Administrative boundaries come
-from geoBoundaries (ODbL~1.0).
+\paragraph{Licences.} NASA FIRMS data are open through NASA EOSDIS and have to be cited as such.
+Open-Meteo publishes under CC-BY 4.0 and its free tier covers non-commercial use, which fits a
+public university project, with the attribution ``Weather data by Open-Meteo.com'' plus
+ERA5/Copernicus. The administrative boundaries come from geoBoundaries under ODbL~1.0.
 
-\paragraph{Why the archive is read through the API.} The official bulk archive delivers CSV/SHP/JSON
-by email request after an Earthdata login. The same standard-processing records are also served by
-the area API for arbitrary historical dates, five days per request. The API path was chosen because
-it is automatable, idempotent and resumable; it still forces the partitioned bulk load the assignment
-describes. The email path remains documented as an alternative in \code{docs/downloading.md}.
+\paragraph{Why we read the archive through the API.} The official bulk archive hands you CSV, SHP or
+JSON by email after an Earthdata login. The same standard-processing records are available from the
+area API for arbitrary past dates, five days at a time. We took the API route because it can be
+automated, repeated and resumed, and it still forces the partitioned load the assignment describes.
+The email route is written up in \code{docs/downloading.md} for whoever prefers it.
 
-\section{Source validation and evidence}
+\section{Did the sources actually work?}
 
-Every source was queried for real, and the unmodified response was kept under
-\code{workshop\_1/samples/} together with the HTTP headers (\code{ETag}, \code{Last-Modified}) that
-the incremental design depends on.
+Yes, all four, and we kept the raw response for each one in \code{workshop\_1/samples/} along with
+the HTTP headers (\code{ETag}, \code{Last-Modified}) that the incremental design leans on.
 
 \begin{table}[h]
 \centering
@@ -156,19 +158,21 @@ F2, ERA5, Bogotá, 10 days, \code{timezone=UTC} & 240 hourly rows, 0 nulls & wea
 F4, forecast, 33 centroids, \code{past\_days=7} & 462 region-days & multi-coordinate batching works \\
 \bottomrule
 \end{tabular}
-\caption{Validation queries and their outcomes.}
+\caption{What each validation query returned.}
 \end{table}
 
-A first 24-hour query returned zero rows while a five-day window returned 1\,071: the one-day request
-covers only the part of the UTC day already processed. This is a freshness property of the product,
-not a defect, and it is recorded in the contract as the reason for a two-day window with overlap.
+One result deserves a comment because it confused us for a few minutes. A 24-hour query came back
+empty while the five-day window returned 1\,071 rows. The reason is freshness: a one-day request only
+covers the part of the UTC day that has already been processed. That is a property of the product,
+and it is why the contract asks for a two-day window with an overlap instead of a single day.
 
-\section{Source profiling and data-quality findings}
+\section{What the data looks like inside}
 
-The profiling notebook (\code{notebooks/01\_source\_profiling.ipynb}, 18 code cells, executed
-top-to-bottom with no failures) reports, for each source, null percentages per field, value ranges,
-duplicated identifiers, timestamp format and time zone, coordinate validity and unit consistency.
-Nine concrete problems were found; each is stated with the record that demonstrates it.
+The profiling notebook (\code{notebooks/01\_source\_profiling.ipynb}, 18 code cells, run from top to
+bottom) records, for every source, the null share per field, value ranges, duplicated identifiers,
+timestamp format and time zone, coordinate validity and unit consistency. Nine problems came out of
+it. Each one is stated here with the record that shows it, because a defect you cannot point at is a
+defect nobody believes.
 
 \begin{longtable}{L{0.6cm}L{4.6cm}L{10.2cm}}
 \toprule
@@ -178,10 +182,10 @@ Nine concrete problems were found; each is stated with the record that demonstra
 1 & Naive duplicate detection finds nothing, realistic detection finds 44.5\,\% & Exact \code{(lat, lon, date, time, satellite)} duplicates: \textbf{0}. On a $\sim$1.1~km grid with the same day: \textbf{987 of 2\,220 rows (44.5\,\%)} share a cell. At 0.1~km: 31 rows. \\
 2 & \code{acq\_time} is HHMM without zero padding & 436 rows have a three-digit value (\code{630} = 06:30, \code{3} = 00:03). Those 436 rows are exactly the 436 night detections. Parsed as an integer the value silently becomes minutes or hours. \\
 3 & Physically meaningless FRP & 1 row with \code{frp = 0.00} and 86 rows with \code{frp < 1}~MW. A zero FRP cannot be a fire and distorts any $\Sigma$FRP aggregate. \\
-4 & The same fire appears as several near-identical records & Three rows with \code{frp = 196.02} at 2026-11-13 17:53 UTC, at 8.58028/$-$73.01519, 8.58118/$-$73.00967 and 8.58410/$-$73.01637 --- within 700~m, same minute, one \code{h} and two \code{n} confidences. \\
+4 & The same fire appears as several near-identical records & Three rows with \code{frp = 196.02} at 2026-11-13 17:53 UTC, at 8.58028/$-$73.01519, 8.58118/$-$73.00967 and 8.58410/$-$73.01637, all within 700~m and the same minute, one \code{h} and two \code{n} confidences. \\
 5 & \code{confidence} is a code, not a percentage & VIIRS returns \code{l}/\code{n}/\code{h} (observed: n = 2\,087, l = 79, h = 54); MODIS returns 0--100. The filter \code{confidence > 50} keeps 0 of 2\,220 VIIRS rows. \\
 6 & The NRT endpoint cannot serve historical dates & Requests for 2024-01-22 and 2024-09-15 returned 0 rows while ``last 5 days'' returned 1\,071. \\
-7 & Weather is returned in local time unless forced & With \code{timezone=UTC} the response reports \code{GMT}; without it the same request returns Colombia local time --- a silent five-hour shift against UTC fire timestamps. \\
+7 & Weather is returned in local time unless forced & With \code{timezone=UTC} the response reports \code{GMT}; without it the same request returns Colombia local time, a silent five-hour shift against UTC fire timestamps. \\
 8 & Weather is a series, not an event & 240 hourly rows for a single point cannot be stored in the event model; it needs \code{weather\_observation} in long format. \\
 9 & Centroid approximation & One value per region is not an area average: ERA5 cells are 0.25$^\circ$ ($\sim$28~km) and cover several municipalities. Declared as a limitation. \\
 \bottomrule
@@ -190,9 +194,11 @@ Nine concrete problems were found; each is stated with the record that demonstra
 
 \subsection{The bounding box is not the country}
 
-The area API accepts only a bounding box or \code{world}. The Colombian box
-($-79.0, -4.5, -66.5, 13.5$) contains Venezuela, Ecuador, Peru, Brazil and Panama, so every
-detection must be assigned to a department with a point-in-polygon test before any aggregation.
+The area API takes a bounding box, or the word \code{world}, and nothing else. The Colombian box
+($-79.0, -4.5, -66.5, 13.5$) also contains Venezuela, Ecuador, Peru, Brazil and Panama, so every
+detection has to be assigned to a department with a point-in-polygon test before anything is
+aggregated. Skipping that step is the easiest way to report fires in five countries as if they were
+Colombian.
 
 \begin{table}[h]
 \centering
@@ -205,15 +211,16 @@ detection must be assigned to a department with a point-in-polygon test before a
 Full year 2024, three sensors & 703\,633 & 236\,997 & 33.7\,\% \\
 \bottomrule
 \end{tabular}
-\caption{Bounding-box leakage. The share is season-dependent, so the filter can never be skipped.}
+\caption{Bounding-box leakage. The share moves with the season, so the filter is never optional.}
 \end{table}
 
-\section{The 2026 sensor discontinuities}
+\section{What changed in 2026, and why it matters more than it looks}
 
-Suomi NPP stopped producing new data on 2 November 2026; its archive remains but it is no longer an
-incremental source. Terra MODIS has been in standby since March 2026 and Aqua MODIS is being
-retired. The historical baseline therefore mixes sensors with different detection capabilities, and
-the assignment requires the effect to be documented. It was measured on the complete 2024 archive.
+Suomi NPP stopped producing new data on 2 November 2026. Its archive is still there, but it is no
+longer an incremental source. Terra MODIS has been in standby since March 2026 and Aqua MODIS is being
+retired. Any historical baseline therefore mixes instruments with different detection capabilities,
+and the assignment asks for that effect to be documented with numbers. We measured it on the
+complete 2024 archive.
 
 \begin{table}[h]
 \centering
@@ -230,21 +237,21 @@ the assignment requires the effect to be documented. It was measured on the comp
 \caption{Volume and severity per sensor, Colombia bounding box, 2024.}
 \end{table}
 
-\paragraph{Result 1 --- the two VIIRS sensors are compatible.} S-NPP and NOAA-20 differ by
-\textbf{2.6\,\%} for the same year (ratio 1.026). They can be pooled to lengthen the baseline once
-the factor is declared. NOAA-21 has only about 3.7 years of history, so it anchors the incremental
-stream, not the baseline.
+\paragraph{The two VIIRS sensors agree.} S-NPP and NOAA-20 differ by \textbf{2.6\,\%} over the same
+year (ratio 1.026), which is close enough to pool them and lengthen the baseline once the factor is
+declared. NOAA-21 is a different problem: it only has about 3.7 years of history, so it belongs to
+the incremental stream and not to the baseline.
 
-\paragraph{Result 2 --- MODIS and VIIRS are not interchangeable.} VIIRS detects \textbf{8.8$\times$}
-more records than MODIS (MODIS sees 11.4\,\% of the VIIRS count) and the mean FRP per detection
-differs by \textbf{3.57$\times$} (32.43 vs 9.08~MW), because a 1~km pixel aggregates more energy and
-only large fires cross its threshold. \textbf{A baseline built on MODIS with a present of VIIRS would
-report an 8.8$\times$ anomaly that is purely an instrument change.} The design answer is a
-\textbf{per-sensor baseline}, with harmonisation only across the VIIRS pair.
+\paragraph{MODIS and VIIRS cannot be averaged together.} VIIRS detects \textbf{8.8$\times$} more
+records than MODIS, which is to say MODIS sees 11.4\,\% of the VIIRS count, and the mean FRP per
+detection differs by \textbf{3.57$\times$} (32.43 against 9.08~MW). A 1~km pixel collects more energy
+and only the large fires cross its threshold. Put a VIIRS present against a MODIS baseline and the
+report will show an 8.8$\times$ anomaly that came from the instrument and nothing else. That is why
+the baseline is built per sensor, with harmonisation only inside the VIIRS pair.
 
-\paragraph{Result 3 --- the seasonality is real signal.} The three sensors move together month by
-month, so the seasonality is not instrument noise: the instrument difference is a level shift, not a
-shape change. That is why a per-sensor baseline works and a pooled one does not.
+\paragraph{The seasonality, on the other hand, is real.} All three sensors rise and fall together
+month by month. The instrument difference is a shift in level, not a change in shape, which is
+exactly why a per-sensor baseline works and a pooled one does not.
 
 \begin{figure}[h]
 \centering
@@ -259,16 +266,16 @@ shape change. That is why a per-sensor baseline works and a pooled one does not.
 \caption{Total volume per sensor (left) and the share of records that are actually Colombian (right).}
 \end{figure}
 
-\paragraph{The second discontinuity: the weather model.} Open-Meteo documents that data from 2017
-onwards uses newer 9~km models, while ERA5 is 0.25$^\circ$ and ERA5-Land 0.1$^\circ$. A baseline that
-crosses 2017 therefore mixes model resolutions, exactly as a fire baseline mixes sensors. Both
-discontinuities are treated the same way: baseline per era, and the choice of ERA5 as the fixed
-model is recorded as a project decision.
+\paragraph{The weather has the same problem.} Open-Meteo's own documentation says that data from 2017
+onwards comes from newer 9~km models, while ERA5 is 0.25$^\circ$ and ERA5-Land 0.1$^\circ$. A climate
+baseline that crosses 2017 mixes resolutions, in the same way a fire baseline mixes sensors. We treat
+both discontinuities the same way, with a baseline per era, and we fixed ERA5 as the model so the
+choice cannot drift later.
 
-\section{Overlap verification}
+\section{Are the sources describing the same fires?}
 
-Five candidate pairs were extracted programmatically: NOAA-20 and NOAA-21 detections on the same
-day, within 2~km of each other. They describe the same real fire.
+We pulled five candidate pairs programmatically: NOAA-20 and NOAA-21 detections on the same day,
+within 2~km of each other.
 
 \begin{table}[h]
 \centering
@@ -287,19 +294,19 @@ day, within 2~km of each other. They describe the same real fire.
 \caption{The same fire, two records: what differs is time, position, FRP and sometimes confidence.}
 \end{table}
 
-In every pair the timestamp differs (different overpass), the position differs by up to $\sim$300~m
-(geolocation spread), the FRP differs (different pixel footprint), and the confidence code may
-differ. What does not exist in any source is an identifier: it has to be constructed by the
-ingestion layer. This is the empirical basis for the \code{fire\_event} table.
+In each pair the timestamp differs because the overpass differs, the position differs by up to about
+300~m from geolocation spread, the FRP differs because the pixel footprint differs, and the
+confidence code sometimes changes. What is never in the source is an identifier. Somebody has to
+construct it, which is what the \code{fire\_event} table is for.
 
-Because the assigned sources come from only two providers, cross-validation is done at the
-\emph{processing} and \emph{model} level --- NRT against SP for the same date, ERA5 against the
-forecast product for the same hour, ERA5 0.25$^\circ$ against the 9~km model --- rather than across
-independent providers.
+The assigned sources come from two providers, so our cross-check runs at the level of processing and model, since no two of these sources have
+independent owners: NRT against SP for the same date, ERA5 against the
+forecast product for the same hour, ERA5 at 0.25$^\circ$ against the 9~km model. It is a weaker test
+than comparing two unrelated agencies, and the report says so.
 
-\section{Canonical mapping}
+\section{Mapping everything into one model}
 
-Every source field is mapped to the canonical event model
+Each source field goes to the canonical event model
 (\code{event\_id}, \code{source}, \code{event\_type}, \code{timestamp}, \code{latitude},
 \code{longitude}, \code{severity}, \code{raw\_reference}).
 
@@ -313,34 +320,36 @@ Every source field is mapped to the canonical event model
 \code{observed\_at} & \code{acq\_date} + \code{acq\_time} & Build an explicit UTC timestamp; \code{acq\_time} is HHMM without zero padding \\
 \code{latitude}, \code{longitude} & \code{latitude}, \code{longitude} & WGS84, decimal degrees, as delivered \\
 \code{severity} & \code{frp} & MW \\
-\code{event\_id} & --- & Deterministic hash of source + rounded position + timestamp; never a serial \\
-\code{raw\_reference} & --- & Path of the unmodified response + line number or record id \\
+\code{event\_id} & -- & Deterministic hash of source + rounded position + timestamp; never a serial \\
+\code{raw\_reference} & -- & Path of the unmodified response + line number or record id \\
 \bottomrule
 \end{tabular}
 \caption{Mapping for the fire sources (F1, F3).}
 \end{table}
 
-\paragraph{The weather sources do not fit the event model.} A weather value is a sample of a
-continuous field at a location and time, not a discrete event. Only \code{observed\_at},
-\code{latitude}, \code{longitude} (region centroid) and \code{raw\_reference} map onto
-\code{event}; the measurements live in \code{weather\_observation}, in long format (one row per
-variable), with the model and grid resolution recorded.
+\paragraph{The weather does not fit, and pretending otherwise breaks the model.} A weather value is a
+sample of a continuous field at a place and a time. It is not a discrete event, and forcing it into
+\code{event} would mean inventing a coordinate and a severity that do not exist. Only
+\code{observed\_at}, \code{latitude}, \code{longitude} (the region centroid) and
+\code{raw\_reference} map onto \code{event}; the measurements live in
+\code{weather\_observation}, one row per variable, with the model and the grid resolution written
+down next to the value.
 
-\subsection{Domain tables}
+\subsection{Tables}
 
 \begin{itemize}
-  \item \code{region} --- 33 units: \code{region\_id}, name, level, centroid, geometry, source.
-  \item \code{fire\_detection} --- hazard-specific attributes: \code{brightness},
+  \item \code{region}: the 33 units, with id, name, level, centroid, geometry and source.
+  \item \code{fire\_detection}: the hazard-specific attributes, which are \code{brightness},
         \code{bright\_ti4}, \code{bright\_ti5}, \code{frp}, \code{confidence\_raw},
         \code{confidence\_norm}, \code{satellite}, \code{instrument}, \code{scan}, \code{track},
-        \code{daynight}, \code{product\_version}.
-  \item \code{fire\_event} --- the grouping of detections: \code{first\_seen}, \code{last\_seen},
-        centroid, \code{n\_detections}, \code{frp\_sum}, \code{frp\_max}, \code{sensor\_set},
+        \code{daynight} and \code{product\_version}.
+  \item \code{fire\_event}: the grouping, with \code{first\_seen}, \code{last\_seen}, centroid,
+        \code{n\_detections}, \code{frp\_sum}, \code{frp\_max}, \code{sensor\_set} and
         \code{cluster\_params}.
-  \item \code{weather\_observation} --- \code{region\_id}, \code{observed\_at}, \code{variable},
-        \code{value}, \code{unit}, \code{source}, \code{model}, \code{grid\_resolution\_deg}.
-  \item \code{ingestion\_run} --- operational state: source, partition, mode, status, watermark
-        before and after, row counts, error message.
+  \item \code{weather\_observation}: \code{region\_id}, \code{observed\_at}, \code{variable},
+        \code{value}, \code{unit}, \code{source}, \code{model} and \code{grid\_resolution\_deg}.
+  \item \code{ingestion\_run}: source, partition, mode, status, watermark before and after, row
+        counts and the error message when there is one.
 \end{itemize}
 
 \begin{figure}[H]
@@ -353,34 +362,34 @@ indicator possible; \code{ingestion\_run} makes the pipeline restartable.}
 \label{fig:er}
 \end{figure}
 
-The diagram in Figure~\ref{fig:er} also encodes the central modelling tension: weather is a
-\emph{series} attached to a region and a time, not an event attached to a coordinate, which is
-why it needs its own table rather than a wider \code{event}.
+Figure~\ref{fig:er} also shows where the modelling pressure sits. Weather hangs off a region and a
+time. An event hangs off a coordinate. That is the whole reason two tables are needed, and it is the
+kind of thing that is cheap to get right now and expensive to fix in Workshop 3.
 
-\subsection{Grouping detections into fire events}
+\subsection{From detections to fire events}
 
-This is the main challenge of the workshop. With 44.5\,\% of rows sharing a $\sim$1~km cell, a raw
-count measures the number of pixels observed, not the number of fires. The proposed rule:
+This is the hard part of the workshop. With 44.5\,\% of rows sharing a cell of about 1~km, a raw count
+measures pixels observed. It does not measure fires. Our proposed rule:
 
 \begin{itemize}
-  \item \textbf{Space:} $\varepsilon_{space} \approx 1.5$--$2$~km, because the VIIRS footprint is
-        375~m but cross-sensor geolocation spread reaches $\sim$1~km.
-  \item \textbf{Time:} $\varepsilon_{time} \approx 24$~h with connected-component chaining, because
-        a fire burns for days and must remain \emph{one} event.
-  \item \textbf{Identifier:} hash of the rounded centroid plus \code{first\_seen}, so the grouping is
-        reproducible and idempotent.
-  \item \textbf{Metrics:} report three --- detection count, grouped event count and $\Sigma$FRP ---
-        and state which one the indicator uses.
+  \item Space: $\varepsilon_{space} \approx 1.5$ to $2$~km. The VIIRS footprint is 375~m, but
+        cross-sensor geolocation spread reaches about 1~km.
+  \item Time: $\varepsilon_{time} \approx 24$~h with connected-component chaining, because a fire
+        burns for several days and has to stay one event across them.
+  \item Identifier: a hash of the rounded centroid plus \code{first\_seen}, so grouping is
+        reproducible and re-running it changes nothing.
+  \item Metrics: we report detection count, grouped event count and $\Sigma$FRP, and we say which
+        one the indicator uses instead of leaving the reader to guess.
 \end{itemize}
 
-\subsection{Normalisation rules}
+\subsection{Normalisation}
 
-All timestamps are UTC (\code{TIMESTAMPTZ}); coordinates are WGS84 decimal degrees validated against
-the region polygons; FRP is in MW; precipitation in mm; wind in km/h; temperature in $^\circ$C; VPD in
-kPa. Confidence is harmonised to 0--100 with a documented mapping table. Units are declared per
-column and never inferred at read time.
+Timestamps in UTC as \code{TIMESTAMPTZ}. Coordinates in WGS84 decimal degrees, validated against the
+region polygons. FRP in MW, precipitation in mm, wind in km/h, temperature in $^\circ$C, VPD in kPa.
+Confidence harmonised to 0--100 with the mapping table written down. Units are declared per column
+and never inferred at read time, which is the only way to survive a source that changes its mind.
 
-\section{Ingestion contract}
+\section{The ingestion contract}
 
 \begin{table}[h]
 \centering
@@ -398,31 +407,31 @@ F4 forecast & none & Hourly; \code{past\_days=7} and \code{forecast\_days=7} in 
 \caption{Per-source contracts.}
 \end{table}
 
-\paragraph{Correctness when a run fails halfway.} Writes are idempotent on the duplicate key
-(\code{INSERT \ldots ON CONFLICT DO NOTHING}); each partition is loaded in its own transaction; the
-watermark advances \emph{only} after the partition is committed; and \code{ingestion\_run} records
-\code{started}, \code{committed} or \code{failed} with the watermark before and after. The overlap window
-is the recovery policy, not redundancy: if the 12:00 poll fails, the 15:00 poll with
-\code{DAY\_RANGE=2} recovers the lost window. The partitioned historical pull is resumable for the
-same reason --- windows already on disk are reported as \code{cached} in the manifest and skipped.
+\paragraph{What happens when a run dies halfway.} Writes are idempotent on the duplicate key
+(\code{INSERT \ldots ON CONFLICT DO NOTHING}), each partition commits in its own transaction, and the
+watermark only advances after that commit. \code{ingestion\_run} keeps the state as
+\code{started}, \code{committed} or \code{failed}, together with the watermark before and after, so a
+restart knows where it was. The overlap window is not redundancy. It is the recovery policy: if the
+12:00 poll fails, the 15:00 poll with \code{DAY\_RANGE=2} covers the hole. The historical pull works
+the same way, and reports windows already on disk as \code{cached}.
 
-\paragraph{A source that revises its own past.} Near-real-time records are replaced by
-standard-processing records with roughly a five-month lag. Any design that assumes historical
-immutability is wrong: the contract includes a correction window of five months during which the
-same date is re-queried.
+\paragraph{A source that rewrites its own past.} NRT records are replaced by standard-processing
+records with roughly a five-month lag. Any design that assumes history is immutable is wrong here,
+so the contract carries a correction window of five months during which the same dates are queried
+again.
 
 \section{Project definition}
 
-\subsection{Functional user}
-\textbf{Role:} risk analyst at a departmental emergency-management office.
-\textbf{Profile:} works with weekly incident summaries, has no GIS tooling, needs a defensible
-number to justify resource allocation before a dry-season peak.
-\textbf{Decisions supported:} which departments to inspect first, whether the current week is worse
-than a normal week given the rainfall, and how stale the underlying data is.
-\textbf{Why a dashboard:} the analyst cannot join satellite detections with reanalysis weather by
-hand, and doing so monthly does not scale past a handful of departments.
+\subsection{Who uses it}
 
-\subsection{User stories (MoSCoW)}
+A risk analyst at a departmental emergency-management office. Works from weekly incident summaries,
+has no GIS tooling, and needs one number they can defend in a meeting where resources get assigned
+before the dry-season peak. They need to know which departments to look at first, whether this week
+is worse than a normal wet or dry week, and how old the underlying data is. Joining satellite
+detections with reanalysis weather by hand is not something they will do, and doing it monthly for
+more than a handful of departments is not a process that survives contact with a real workload.
+
+\subsection{User stories, in MoSCoW order}
 
 \begin{table}[h]
 \centering
@@ -440,33 +449,35 @@ Could & As a journalist, I want to export the raw reference of a detection, so t
 Could & As a researcher, I want the monthly sequence of detections per sensor, so that I can separate instrument effects from real trends. \\
 \bottomrule
 \end{tabular}
-\caption{Seven user stories, prioritised. Monitoring, analysis and trust are all covered.}
+\caption{Seven user stories, prioritised. Monitoring, analysis and trust all appear.}
 \end{table}
 
-\subsection{Indicator proposal}\label{sec:indicator}
+\subsection{The indicator}\label{sec:indicator}
 
-The indicator is \textbf{conditioned on weather}, because the assignment asks for activity
-``unusual relative to historical patterns and weather conditions''.
+The indicator is conditioned on weather because the assignment asks for activity that is unusual
+``relative to historical patterns and weather conditions'', and a raw count cannot do that.
 
 \begin{enumerate}
-  \item \textbf{Panel:} one row per region-day with detections, grouped fire events, $\Sigma$FRP and
-        weather (temperature, minimum relative humidity, accumulated precipitation over 7 and 30
-        days, wind, VPD, soil moisture).
-  \item \textbf{Expected value:} estimate $\mathrm{E}[\mathrm{detections} \mid \mathrm{weather}]$ with a
-        Poisson or negative-binomial regression, or --- if time is short --- by stratifying into
-        bins of dry/wet $\times$ hot/cool $\times$ windy/calm.
-  \item \textbf{Anomaly:} observed / expected, plus the percentile of the residual within the same
-        region and calendar window.
-  \item \textbf{Output scale:} five levels --- Very low (below P10), Low (P10--P25), Normal
-        (P25--P75), Elevated (P75--P90), Extreme (above P90).
-  \item \textbf{Validation:} the index must spike in January 2024 (Bogotá and Cundinamarca), in the
-        2019 Amazon season, and must \emph{not} spike in a wet control year.
+  \item A panel with one row per region-day: detections, grouped fire events, $\Sigma$FRP, and weather
+        (temperature, minimum relative humidity, accumulated precipitation over 7 and 30 days, wind,
+        VPD, soil moisture).
+  \item An expected value, estimated as $\mathrm{E}[\mathrm{detections} \mid \mathrm{weather}]$ with a
+        Poisson or negative-binomial regression. If time runs short, stratifying into dry or wet
+        times hot or cool times windy or calm bins gets most of the way there.
+  \item An anomaly, observed over expected, plus the percentile of the residual inside the same region
+        and the same calendar window.
+  \item A five-level output: Very low below P10, Low between P10 and P25, Normal between P25 and P75,
+        Elevated between P75 and P90, Extreme above P90.
+  \item A validation that fails loudly if it does not work: the index has to spike in January 2024 in
+        Bogotá and Cundinamarca, has to spike in the 2019 Amazon season, and must stay quiet in a wet
+        control year.
 \end{enumerate}
 
-The assumption behind the conditioning was already tested on real data: for 2024, daily detections
-correlate \textbf{+0.83} with VPD, \textbf{$-$0.69} with seven-day accumulated precipitation and
-\textbf{+0.72} with maximum temperature. Two regions with different rainfall cannot be compared by
-raw counts; the difference would be weather, not anomaly.
+We tested the assumption behind the conditioning before writing the rest of the design. For 2024, daily
+detections correlate \textbf{+0.83} with VPD, \textbf{$-$0.69} with seven-day accumulated
+precipitation, and \textbf{+0.72} with maximum temperature. Two departments with different rainfall
+cannot be compared by raw counts. The gap between them would be weather, and calling it an anomaly
+would be a mistake with a table and a chart around it.
 
 \begin{figure}[h]
 \centering
@@ -475,19 +486,18 @@ raw counts; the difference would be weather, not anomaly.
 empirical justification for a weather-conditioned baseline.}
 \end{figure}
 
-\paragraph{What the indicator is not.} It describes anomalous observed activity. It is not a forecast,
-not a fire-danger index, and not the Canadian FWI --- implementing FWI is out of scope for this
-workshop and, if done later, must be described as an inspired composite rather than a standard one.
+\paragraph{What this is not.} It describes observed activity. It is not a forecast, it is not a
+fire-danger index, and it is not the Canadian FWI. Implementing FWI belongs to a later workshop, and
+if we do it, it will be described as our own composite, and the report will say so.
 
-\subsection{Indicator validation on the January 2024 episode}
+\subsection{Testing it on January 2024}
 
-The design was tested on a real episode. Method: one sensor only (VIIRS NOAA-20, so the
-instrument discontinuity cannot contaminate the comparison); the calendar window is
-1--31 January in every year; the baseline is the mean of the same window over
-\textbf{2019--2023} (five years); the anomaly is observed/expected, plus the percentile of
-the observation inside that region's own history. The weather-conditioned expectation uses the
-within-region (fixed-effects) model of Section~\ref{sec:indicator}, which is what removes the
-confounding between ``dry region'' and ``region that burns''.
+We ran the design against a real episode. One sensor only, VIIRS NOAA-20, so the instrument
+discontinuity cannot leak into the comparison. The calendar window is 1--31 January in every year. The
+baseline is the mean of that same window over \textbf{2019--2023}, five years. The anomaly is observed
+over expected, plus the percentile of the observation inside that region's own history. The
+weather-conditioned expectation uses the within-region fixed-effects model from
+Section~\ref{sec:indicator}.
 
 \begin{table}[h]
 \centering
@@ -502,30 +512,29 @@ Meta & 6\,099 & 4\,293.2 & 1.42 & 80 & 1.37 \\
 Vichada & 7\,965 & 5\,385.2 & 1.48 & 80 & \textbf{0.98} \\
 Norte de Santander & 523 & 319.8 & 1.64 & 100 & \textbf{1.02} \\
 \midrule
-National total & 25\,335 & 19\,225 & 1.32 & --- & --- \\
+National total & 25\,335 & 19\,225 & 1.32 & -- & -- \\
 \bottomrule
 \end{tabular}
 \caption{January 2024 against the 2019--2023 baseline. The conditioned ratio is what remains
 once the region's own weather is taken into account.}
 \end{table}
 
-\paragraph{The conditioning changes the conclusion.} Vichada looks anomalous with raw counts
-(1.48$\times$, i.e.\ ``48\,\% above normal''), but once its own dryness is accounted for the ratio
-falls to \textbf{0.98}: it was burning what is normal for how dry it was. Norte de Santander
-collapses from 1.64 to \textbf{1.02} for the same reason. In the Andes the excess survives:
-Bogotá D.C.\ keeps \textbf{2.18$\times$} and Cundinamarca \textbf{1.86$\times$} after conditioning,
-so those are genuine anomalies and not weather artefacts.
+\paragraph{The conditioning changes the answer.} Vichada looks bad on raw counts, at 1.48$\times$ or
+``48\,\% above normal''. Once its own dryness is accounted for, the ratio drops to \textbf{0.98}. It
+was burning what it normally burns when it is that dry. Norte de Santander does the same thing, from
+1.64 down to \textbf{1.02}. In the Andes the excess survives: Bogotá D.C.\ keeps \textbf{2.18$\times$}
+and Cundinamarca \textbf{1.86$\times$} after conditioning, which is what makes them worth a phone
+call.
 
-\paragraph{A national indicator would have missed the event.} Total January detections were
-41\,165 in 2022 and only 25\,335 in 2024. On a national average, January 2024 looks
-\emph{quieter} than 2022, and an analyst would have concluded that nothing unusual was happening.
-Region by region the picture is the opposite: Huila reaches \textbf{3.80$\times$} its own
-baseline, Bogotá \textbf{3.04$\times$}, Cundinamarca \textbf{2.60$\times$} and Boyacá
-\textbf{2.52$\times$}, all at the 100th percentile of their own history. The 2022 activity was concentrated in the
-savanna and Amazon (Vichada 10\,195, Meta 10\,616, Caquetá 9\,151 in that January), while 2024
-moved into the Andean departments. \textbf{The per-region requirement of the assignment is
-therefore not a presentation detail: a national aggregate hides exactly the event the system
-exists to detect.}
+\paragraph{A national indicator would have missed it.} January detections were 41\,165 in 2022 and
+only 25\,335 in 2024. Look at the country as a whole and 2024 looks quieter than 2022, so an analyst
+reading a national chart would have concluded that nothing much was happening. Region by region the
+picture inverts. Huila reaches \textbf{3.80$\times$} its own baseline, Bogotá \textbf{3.04$\times$},
+Cundinamarca \textbf{2.60$\times$} and Boyacá \textbf{2.52$\times$}, all at the 100th percentile of
+their own history. The 2022 fires sat in the savanna and the Amazon, with Vichada at 10\,195, Meta at
+10\,616 and Caquetá at 9\,151 that January, while 2024 moved into the Andean departments. The
+per-region requirement in the assignment is not a presentation choice. A national aggregate hides
+the event this system exists to find.
 
 \begin{figure}[H]
 \centering
@@ -534,7 +543,7 @@ exists to detect.}
 the highest activity. Every one of them is above its own baseline.}
 \end{figure}
 
-\subsection{Risks and mitigation}
+\subsection{Risks and what we do about them}
 
 \begin{table}[h]
 \centering
@@ -557,35 +566,41 @@ License and attribution & NASA EOSDIS citation, Open-Meteo CC-BY 4.0, plus a lic
 \caption{Risks and mitigations.}
 \end{table}
 
-\subsection{Architecture overview}
-Four layers follow the reference architecture of the course project, adapted to this hazard:
-\textbf{(1) acquisition} --- one module per source under \code{src/sources/}, driven by
-\code{config/sources.yaml}, with caching and watermark state; \textbf{(2) normalisation} --- unit,
-timezone, confidence and region assignment under \code{src/normalization/};
-\textbf{(3) storage} --- \code{event}, \code{fire\_detection}, \code{fire\_event}, \code{region},
-\code{weather\_observation} and \code{ingestion\_run} in \code{sql/schema.sql};
-\textbf{(4) presentation} --- a Dash application in \code{dashboard/} fed by the region-day panel.
-\code{ingest.py} is the command-line entry point that orchestrates the layers; at this stage it is a
-stub that resolves configuration and reports the declared sources.
+\subsection{How the pieces fit}
 
-\section{Conclusions and limitations}
+Four layers, following the reference architecture of the course project and adapted to this hazard.
+Acquisition is one module per source under \code{src/sources/}, driven by \code{config/sources.yaml},
+carrying the cache and the watermark. Normalisation handles units, time zones, confidence and the
+region assignment under \code{src/normalization/}. Storage is the six tables in
+\code{sql/schema.sql}. Presentation is the Dash application in \code{dashboard/}, fed by the
+region-day panel. \code{ingest.py} is the entry point that ties them together; today it is a stub
+that reads the configuration and reports which sources are declared, which is the right amount of
+code for this stage.
 
-\begin{itemize}
-  \item The four sources were validated with real queries; the archive alone accounts for
-        703\,633 detections in 2024, so the volume justifies the partitioned design.
-  \item The instrument discontinuity is quantified, not merely acknowledged: 8.8$\times$ in count and
-        3.57$\times$ in mean FRP between MODIS and VIIRS, against 2.6\,\% between the two VIIRS
-        sensors.
-  \item Only a third of the records returned by the bounding box are Colombian, and the share moves
-        with the season.
-  \item Weather is a first-class source and a modelling constraint: it is a series, it must be
-        forced to UTC, its model changes in 2017, and it explains most of the seasonal variance.
-  \item \textbf{Limitations:} the weather baseline is a centroid approximation, not an area average;
-        ERA5 latency means the most recent days come from a different product, whose seam is
-        declared rather than hidden; NOAA-21 history is too short to anchor the baseline; and the
-        grouping thresholds are proposed values that still have to be tuned and validated against
-        known fires.
-\end{itemize}
+\section{Conclusions, and what we do not know yet}
+
+The four sources work. We queried each one for real and kept the responses, and the archive alone
+accounts for 703\,633 detections in 2024, which is enough volume to justify pulling it in partitions
+instead of in one gulp.
+
+The instrument discontinuity has a number attached to it: 8.8$\times$ in count and
+3.57$\times$ in mean FRP between MODIS and VIIRS, against 2.6\,\% between the two VIIRS sensors.
+Anyone who builds one baseline across all of them will report an anomaly that belongs to the
+satellites.
+
+Only a third of what the bounding box returns is Colombian, and the share moves with the season, so
+the polygon filter is part of the pipeline and not a cleaning step somebody remembers later.
+
+Weather turned out to be a source and a constraint at the same time. It is a series, it has to be
+forced to UTC, its own model changes in 2017, and it explains most of the seasonal variance that a
+naive indicator would attribute to fire behaviour.
+
+\paragraph{Where this is still weak.} The weather baseline is a centroid approximation, not an area
+average, which will be wrong in departments with strong internal relief. ERA5 latency means the most
+recent days come from a different product and the seam is declared openly. NOAA-21 has
+too little history to anchor anything. And the clustering thresholds of 1.5 to 2~km and 24~h are
+values we proposed, not values we tuned; they still have to be checked against known fires, and the
+indicator's scale has been tested on one episode instead of several.
 
 \section*{References and attribution}
 \small

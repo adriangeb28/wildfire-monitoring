@@ -18,29 +18,29 @@ OUT = ROOT / "notebooks" / "01_source_profiling.ipynb"
 CELLS: list[tuple[str, str]] = [
     (
         "md",
-        """# 01 — Source Profiling and Sample Validation
+        """# 01: profiling the four sources
 
-**Project:** Wildfire Monitoring (Team 3) — Data Analysis Programming, 2026-II
-**Workshop 1 deliverable 2.** Hazard: satellite-detected vegetation fires.
-Severity measure: **FRP (MW)**. Scope: **Colombia, 33 regions**.
+Wildfire monitoring, Team 3, Data Analysis Programming 2026-II, Workshop 1
+deliverable 2. Hazard: vegetation fires seen as satellite thermal anomalies, with
+FRP in MW as the severity measure. Scope: Colombia, 33 regions.
 
-This notebook profiles the four assigned sources on **real, unmodified responses**:
+Four sources, profiled on the raw responses kept in `workshop_1/samples/`:
 
 | # | Role | Source |
 |---|---|---|
-| F1 | Historical | NASA FIRMS archive (standard processing: `*_SP`) |
+| F1 | Historical | NASA FIRMS archive (standard processing, `*_SP`) |
 | F2 | Historical | Open-Meteo Historical Weather (ERA5 reanalysis) |
-| F3 | Incremental | NASA FIRMS NRT (VIIRS NOAA-20 / NOAA-21) |
+| F3 | Incremental | NASA FIRMS NRT (VIIRS NOAA-20 and NOAA-21) |
 | F4 | Incremental | Open-Meteo Forecast |
 
-It answers four questions the workshop grades: *what is in the data*, *what is
-wrong with it*, *do the sources describe the same events*, and *what does that
-force in the canonical model*.
+The notebook goes through what each source contains, what is wrong with it,
+whether two sources describe the same fire, and what all of that forces in the
+canonical model.
 
-Run from the repository root:
+Run it from the repository root:
 
 ```powershell
-$env:PYTHONPATH = "$PWD\\vendor;$PWD\\src"
+$env:PYTHONPATH = "$PWD/vendor;$PWD/src"
 jupyter nbconvert --to notebook --execute notebooks/01_source_profiling.ipynb --inplace
 ```""",
     ),
@@ -73,9 +73,10 @@ print("samples      :", len(list(SAMPLES.glob('*'))), "files")''',
         "md",
         """## 0. A reusable profiler
 
-Every source is described with the same six checks: null percentages per field,
-value ranges, duplicated identifiers, timestamp format and time zone, coordinate
-validity, and unit consistency.""",
+Every source gets the same six checks: null share per field, value ranges,
+duplicated identifiers, timestamp format and time zone, coordinate validity and
+unit consistency. Six is enough to catch everything we found, and it keeps the
+output comparable between sources.""",
     ),
     (
         "code",
@@ -108,13 +109,9 @@ print("helpers defined")''',
     ),
     (
         "md",
-        """## 1. F3 — NASA FIRMS NRT (VIIRS NOAA-20 / NOAA-21)
+        """## 1. F3: NASA FIRMS NRT (VIIRS NOAA-20 and NOAA-21)
 
-Query (area API, 5-day maximum per request):
-
-```
-https://firms.modaps.eosdis.nasa.gov/api/area/csv/{MAP_KEY}/{SOURCE}/-79.0,-4.5,-66.5,13.5/5
-```""",
+The area API takes at most five days per request:""",
     ),
     (
         "code",
@@ -132,11 +129,12 @@ print(f3.head(3).to_string(index=False))''',
     ),
     (
         "md",
-        """### Finding 1 — the duplicate test result depends entirely on the tolerance
+        """### Finding 1: the duplicate count depends on the tolerance you pick
 
-Exact duplicates are zero; on a ~1 km grid and the same day, **44.5 % of rows**
-share a cell. This is the evidence behind "the main challenge is grouping
-detections into fire events".""",
+Exact duplicates are zero. On a ~1 km grid and the same day, 44.5 % of rows share
+a cell. The result is not a property of the data, it is a property of the test,
+and that is the evidence behind the workshop warning about grouping detections
+into fire events.""",
     ),
     (
         "code",
@@ -158,11 +156,11 @@ print(duplicates.to_string(index=False))''',
     ),
     (
         "md",
-        """### Finding 2 — `acq_time` is HHMM without zero padding
+        """### Finding 2: `acq_time` is HHMM without zero padding
 
-436 rows carry a three-digit `acq_time` (`630` means 06:30). Parsed as an
-integer, the value silently becomes 630 minutes or 6.30 hours. Note that those
-436 rows are exactly the 436 night detections.""",
+436 rows carry a three-digit `acq_time`, so `630` means 06:30. Read as an integer
+the value silently becomes 630 minutes or 6.30 hours, depending on the code.
+Those 436 rows are exactly the night detections.""",
     ),
     (
         "code",
@@ -179,10 +177,10 @@ print("ejemplos de acq_time de 3 cifras:", f3.loc[f3.acq_time_digits == 3, "acq_
     ),
     (
         "md",
-        """### Finding 3 — physically meaningless FRP values
+        """### Finding 3: FRP values that cannot be right
 
-An FRP of zero cannot correspond to a fire detection, and an FRP below 1 MW is
-at the noise floor of the product. Both distort any aggregate ΣFRP.""",
+One row has an FRP of zero, which cannot be a fire detection, and 86 sit below
+1 MW, at the noise floor of the product. Both distort any total.""",
     ),
     (
         "code",
@@ -195,11 +193,11 @@ print(f3.loc[f3.frp == 0].head(2).to_string(index=False))''',
     ),
     (
         "md",
-        """### Finding 4 — confidence is a code, not a percentage
+        """### Finding 4: `confidence` is a code, not a percentage
 
-VIIRS returns `l`/`n`/`h`; MODIS returns 0–100. A filter such as
-`confidence > 50` is meaningless on VIIRS, and a naive union of both sensors
-silently keeps or drops everything.""",
+VIIRS returns `l`, `n` or `h`. MODIS returns 0–100. A filter like
+`confidence > 50` means nothing on VIIRS, and unioning both sensors without
+normalising silently keeps or drops everything.""",
     ),
     (
         "code",
@@ -211,11 +209,11 @@ print("Si aplicáramos 'confidence > 50' a VIIRS, sobrevivirían:",
     ),
     (
         "md",
-        """### Finding 5 — the bounding box is not Colombia
+        """### Finding 5: the bounding box is not the country
 
-The API only accepts a bounding box, and the Colombian bbox contains Venezuela,
-Ecuador, Peru, Brazil and Panama. Assigning every detection to a department with
-a point-in-polygon test shows **half the rows are foreign fires**.""",
+The API only takes a bounding box, and the Colombian box contains Venezuela,
+Ecuador, Peru, Brazil and Panama. Assigning each detection to a department with a
+point-in-polygon test shows that half the rows are fires somewhere else.""",
     ),
     (
         "code",
@@ -246,12 +244,12 @@ print("regiones sin detecciones:", 33 - top_regions.shape[0])''',
     ),
     (
         "md",
-        """## 2. F1 — NASA FIRMS archive (standard processing)
+        """## 2. F1: the FIRMS archive (standard processing)
 
-The `*_SP` sources serve archive-quality records; the API accepts historical
-dates for them, 5 days per request (partitioned pull, see
-`tools/pull_history.py`). The `*_NRT` sources only answer for the recent window:
-a request for 2024-01-22 returns zero rows.""",
+The `*_SP` sources serve archive-quality records and the API accepts historical
+dates for them, five days at a time (the partitioned pull lives in
+`tools/pull_history.py`). The `*_NRT` sources only answer for the recent window: a
+request for 2024-01-22 comes back empty.""",
     ),
     (
         "code",
@@ -277,11 +275,12 @@ else:
     ),
     (
         "md",
-        """### Sensor comparison (the 2026 discontinuities)
+        """### Comparing sensors (the 2026 discontinuities)
 
-Suomi NPP ceased production on 2026-11-02; Terra MODIS has been in standby since
-March 2026. A baseline that mixes sensors measures the instrument, not the fire
-activity. This is why the baseline is built **per sensor**.""",
+Suomi NPP stopped on 2026-11-02 and Terra MODIS has been in standby since March
+2026. A baseline that mixes sensors measures the instruments. That is why the
+baseline here is built per sensor, and the cell below shows what happens if you
+forget it.""",
     ),
     (
         "code",
@@ -312,10 +311,11 @@ activity. This is why the baseline is built **per sensor**.""",
     ),
     (
         "md",
-        """## 3. F2 — Open-Meteo Historical (ERA5)
+        """## 3. F2: Open-Meteo historical (ERA5)
 
-Daily panel built from hourly ERA5 values for the **33 region centroids**, one
-request per month with all coordinates, always `timezone=UTC`.""",
+A daily panel built from hourly ERA5 values for the 33 region centroids, one
+request per month with every coordinate in the same call, always with
+`timezone=UTC`.""",
     ),
     (
         "code",
@@ -341,10 +341,11 @@ else:
     ),
     (
         "md",
-        """## 4. F3 weather context — do dry days carry more detections?
+        """## 4. Weather context: do dry days carry more detections?
 
-A first, deliberately simple check of the indicator's core assumption: detections
-should concentrate on dry, hot, high-VPD days.""",
+A deliberately simple test of the assumption the indicator rests on. If dry days
+with a high vapour pressure deficit do not carry more detections, the design is
+wrong and it is better to find out now.""",
     ),
     (
         "code",
@@ -373,11 +374,11 @@ should concentrate on dry, hot, high-VPD days.""",
     ),
     (
         "md",
-        """## 5. F4 — Open-Meteo Forecast, and the seam with F2
+        """## 5. F4: Open-Meteo forecast, and the seam with F2
 
-The forecast product and ERA5 do not share a model. Their overlap is the only
-place where the two can be compared, and the difference is exactly the seam that
-the ingestion contract has to declare.""",
+The forecast product and ERA5 do not come from the same model. Their overlap is
+the only place where the two can be compared, and the size of the difference is
+what the ingestion contract has to declare.""",
     ),
     (
         "code",
@@ -409,10 +410,10 @@ else:
     ),
     (
         "md",
-        """## 6. Overlap verification — the same real-world fire seen twice
+        """## 6. Overlap: the same fire seen twice
 
-Candidate pairs: detections from NOAA-20 and NOAA-21 on the same day, within
-~2 km and ~10 minutes of each other. They are the same fire, not the same record.""",
+Candidate pairs are NOAA-20 and NOAA-21 detections on the same day, within about
+2 km and 10 minutes of each other. One fire, two records.""",
     ),
     (
         "code",
@@ -448,14 +449,14 @@ print(overlap_pairs(f3).to_string(index=False))''',
     ),
     (
         "md",
-        """**What differs** in every pair: the timestamp (different overpass), the
-position (up to ~2 km of geolocation spread), the FRP (different pixel
-footprint), and the confidence code. The identifier does not exist in the source
-at all — it has to be built by the ingestion layer.
+        """In every pair the timestamp differs because the overpass differs, the position
+differs by up to about 2 km of geolocation spread, the FRP differs because the
+pixel footprint differs, and the confidence code often changes too. None of the
+sources provides an identifier, so the ingestion layer has to build one.
 
 ## 7. Summary export
 
-Everything the report needs, in one table.""",
+One row per source, which is what the report cites.""",
     ),
     (
         "code",
@@ -478,18 +479,22 @@ print("escrito:", ROOT / "workshop_1" / "profile_summary.csv")''',
         "md",
         """## 8. What this forces in the design
 
-1. **Detection ≠ event.** With 44.5 % of rows sharing a ~1 km cell, the system
-   needs a `fire_event` table and a spatio-temporal grouping rule before any
-   aggregation.
-2. **Region assignment is mandatory**, not cosmetic: half the rows in the
-   bounding box are not Colombian.
-3. **The baseline is per sensor**, because MODIS, VIIRS-SNPP, VIIRS-NOAA20 and
-   VIIRS-NOAA21 differ in footprint and detection capacity.
-4. **Weather must be stored as a series** (`weather_observation`), not as an
-   event, and every request must force `timezone=UTC`.
-5. **Confidence must be normalised** to a single scale before filtering.
-6. **The indicator needs weather conditioning**: raw counts compare a wet year
-   with a dry one and call the difference an anomaly.""",
+Detection is not an event. With 44.5 % of rows sharing a ~1 km cell, the system
+needs a `fire_event` table and a grouping rule before it aggregates anything.
+
+Region assignment is not cosmetic either. Half the rows in the bounding box
+belong to other countries.
+
+The baseline has to be per sensor, because MODIS and the three VIIRS sensors
+differ in footprint and in what they can detect.
+
+Weather is stored as a series in `weather_observation`, never as an event, and
+every request forces `timezone=UTC`.
+
+Confidence gets normalised to one scale before any filter runs.
+
+And the indicator has to condition on weather. A raw count compares a wet year
+with a dry one and calls the difference an anomaly.""",
     ),
 ]
 

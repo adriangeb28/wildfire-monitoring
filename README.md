@@ -1,8 +1,8 @@
-# Wildfire Monitoring — Multi-Source Ingestion and Analysis System
+# Wildfire monitoring: multi-source ingestion and analysis
 
-**Course:** Data Analysis Programming — Semester 2026-II
-**Workshop:** No. 1 — Hazard Definition, Source Validation, and Data Contract
-**Team 3**
+Course: Data Analysis Programming, semester 2026-II
+Workshop No. 1: hazard definition, source validation and data contract
+Team 3
 
 | Student | Code |
 |---|---|
@@ -10,23 +10,24 @@
 | Santiago Alfonso | 20222020093 |
 | Adrián Espinosa | 20222020104 |
 
-## Hazard
+## The hazard
 
-Vegetation fires detected by satellite thermal anomaly. The unit of observation
-is a **hotspot detection** (a pixel flagged as thermally anomalous), not a fire as
-a discrete entity. Grouping detections into fire events is part of the design.
+Vegetation fires seen as thermal anomalies from a satellite. What we observe is a hotspot detection,
+a pixel flagged as unusually hot, and not a fire. Several detections from different overpasses and
+different sensors can describe the same fire, so grouping them into events is part of the design and
+not a later cleanup.
 
-- **Severity measure:** Fire Radiative Power (FRP) in **MW**. Brightness
-  temperature (K) is a secondary measure. `confidence` is a quality filter, not a
-  severity measure.
-- **Geographic scope:** Colombia — 33 regions (32 departments + Bogotá D.C.)
-- **Historical window:** 2018-01-01 to present (primary baseline, VIIRS NOAA-20),
-  plus 2000/2012 to present as per-sensor long-term context.
-- **Current situation:** last 24 hours and last 7 days, compared against the
-  historical average for the same calendar window, conditioned on weather.
+Severity is Fire Radiative Power in MW, with brightness temperature in K as a secondary reading. The
+`confidence` field is a quality flag; we never use it as a severity measure.
 
-> **Scope of claims.** This project monitors and describes anomalous fire
-> activity. It does **not** predict fires and its indicator is not a forecast.
+We work on Colombia, in 33 units (32 departments plus Bogotá D.C.). The primary baseline starts on
+2018-01-01, because VIIRS NOAA-20 is the only sensor that is both long-lived and still transmitting;
+MODIS from 2000 and S-NPP from 2012 stay as long-term context, always read per sensor. "Current
+situation" means the last 24 hours and the last 7 days, set against the historical average for the
+same calendar window and against the weather.
+
+This project monitors and describes anomalous fire activity. It does not predict fires, and its
+indicator is not a forecast.
 
 ## Data sources
 
@@ -37,10 +38,10 @@ a discrete entity. Grouping detections into fire events is part of the design.
 | F3 | Incremental | NASA FIRMS NRT (VIIRS NOAA-20 / NOAA-21) | REST API (`MAP_KEY`) | CSV |
 | F4 | Incremental | Open-Meteo Forecast | REST API | JSON |
 
-Source limits, licensing and watermarks are declared in
-[`config/sources.yaml`](config/sources.yaml). Every source in this project was
-queried for real; the unmodified responses are kept under
-[`workshop_1/samples/`](workshop_1/samples/).
+Limits, licences and watermarks for each one are declared in
+[`config/sources.yaml`](config/sources.yaml). All four were queried for real and the unmodified
+responses are kept under [`workshop_1/samples/`](workshop_1/samples/), which is the evidence the
+workshop asks for.
 
 ## Repository structure
 
@@ -65,18 +66,19 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env      # then edit .env with your own credentials
 ```
 
-Credentials are read from environment variables (or `.env`). **Never commit
-`.env`.** See [`.env.example`](.env.example).
+Credentials come from environment variables or from `.env`. Never commit `.env`; see
+[`.env.example`](.env.example) for the variables we use.
 
 ## Large files
 
-`data/raw/` is git-ignored. Bulk archives are not committed; only small samples
-live in `workshop_1/samples/`. Download instructions for the large partitions
-are documented in `docs/downloading.md`.
+`data/raw/` is git-ignored. Bulk archives are not committed, only small samples under
+`workshop_1/samples/`. How to download the big partitions is written down in
+`docs/downloading.md`.
 
 ## Attribution and licences
 
-- **NASA FIRMS** — NASA EOSDIS. Data are openly available; cite NASA FIRMS/LANCE.
-- **Open-Meteo** — data under **CC-BY 4.0**, free tier for non-commercial use
-  only. Attribute "Weather data by Open-Meteo.com" and ERA5/Copernicus.
-- **Administrative boundaries** — DANE, Marco Geoestadístico Nacional.
+NASA FIRMS data are open through NASA EOSDIS, and citing NASA FIRMS/LANCE is expected. Open-Meteo
+publishes under CC-BY 4.0 with a free tier for non-commercial use, so the attribution "Weather data
+by Open-Meteo.com" and ERA5/Copernicus appears wherever its data is used. The administrative
+boundaries come from DANE, Marco Geoestadístico Nacional, with geoBoundaries as the programmatic
+alternative.
