@@ -10,6 +10,7 @@
 \usepackage{xcolor}
 \usepackage{hyperref}
 \usepackage{caption}
+\usepackage{float}
 \usepackage{enumitem}
 
 \hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black}
@@ -341,6 +342,20 @@ variable), with the model and grid resolution recorded.
   \item \code{ingestion\_run} --- operational state: source, partition, mode, status, watermark
         before and after, row counts, error message.
 \end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{../figures/er_diagram.png}
+\caption{Draft entity-relationship diagram. \code{event} is the canonical model required by the
+course; \code{fire\_detection}, \code{fire\_event} and \code{weather\_observation} are the
+hazard-specific tables; \code{region} is the reference layer that makes the ``per region''
+indicator possible; \code{ingestion\_run} makes the pipeline restartable.}
+\label{fig:er}
+\end{figure}
+
+The diagram in Figure~\ref{fig:er} also encodes the central modelling tension: weather is a
+\emph{series} attached to a region and a time, not an event attached to a coordinate, which is
+why it needs its own table rather than a wider \code{event}.
 
 \subsection{Grouping detections into fire events}
 
