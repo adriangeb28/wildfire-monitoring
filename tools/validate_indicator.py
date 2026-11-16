@@ -200,6 +200,20 @@ def main() -> int:
     result.to_csv(OUT_CSV, index=False)
     print(f"\nescrito: {OUT_CSV.relative_to(ROOT)}")
 
+    # per-year table, so the report can show the full history behind the anomaly
+    by_year = (
+        merged.pivot_table(index="region_name", columns="year", values="detections", aggfunc="sum")
+        .fillna(0)
+        .astype(int)
+        .sort_values(by=TARGET_YEAR, ascending=False)
+    )
+    by_year.to_csv(OUT_CSV.with_name("indicator_panel_by_year.csv"), index_label="region_name")
+    print("escrito: workshop_1/indicator_panel_by_year.csv")
+    print("\n=== detecciones de enero por año (regiones con más actividad en 2024) ===")
+    print(by_year.head(10).to_string())
+    print("\ntotal nacional por año:")
+    print(by_year.sum().to_string())
+
     plot = result.dropna(subset=["ratio"]).nlargest(12, "detections")
     fig, ax = plt.subplots(figsize=(10, 4.4))
     x = np.arange(len(plot))

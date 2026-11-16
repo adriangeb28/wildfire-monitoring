@@ -443,7 +443,7 @@ Could & As a researcher, I want the monthly sequence of detections per sensor, s
 \caption{Seven user stories, prioritised. Monitoring, analysis and trust are all covered.}
 \end{table}
 
-\subsection{Indicator proposal}
+\subsection{Indicator proposal}\label{sec:indicator}
 
 The indicator is \textbf{conditioned on weather}, because the assignment asks for activity
 ``unusual relative to historical patterns and weather conditions''.
@@ -478,6 +478,61 @@ empirical justification for a weather-conditioned baseline.}
 \paragraph{What the indicator is not.} It describes anomalous observed activity. It is not a forecast,
 not a fire-danger index, and not the Canadian FWI --- implementing FWI is out of scope for this
 workshop and, if done later, must be described as an inspired composite rather than a standard one.
+
+\subsection{Indicator validation on the January 2024 episode}
+
+The design was tested on a real episode. Method: one sensor only (VIIRS NOAA-20, so the
+instrument discontinuity cannot contaminate the comparison); the calendar window is
+1--31 January in every year; the baseline is the mean of the same window over
+\textbf{2019--2023} (five years); the anomaly is observed/expected, plus the percentile of
+the observation inside that region's own history. The weather-conditioned expectation uses the
+within-region (fixed-effects) model of Section~\ref{sec:indicator}, which is what removes the
+confounding between ``dry region'' and ``region that burns''.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Region} & \textbf{Observed} & \textbf{Expected} & \textbf{Raw ratio} & \textbf{Percentile} & \textbf{Weather-conditioned ratio} \\
+\midrule
+Bogotá D.C. & 31 & 10.2 & \textbf{3.04} & 100 & \textbf{2.18} \\
+Cundinamarca & 262 & 100.6 & \textbf{2.60} & 100 & \textbf{1.86} \\
+Meta & 6\,099 & 4\,293.2 & 1.42 & 80 & 1.37 \\
+Vichada & 7\,965 & 5\,385.2 & 1.48 & 80 & \textbf{0.98} \\
+Norte de Santander & 523 & 319.8 & 1.64 & 100 & \textbf{1.02} \\
+\midrule
+National total & 25\,335 & 19\,225 & 1.32 & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{January 2024 against the 2019--2023 baseline. The conditioned ratio is what remains
+once the region's own weather is taken into account.}
+\end{table}
+
+\paragraph{The conditioning changes the conclusion.} Vichada looks anomalous with raw counts
+(1.48$\times$, i.e.\ ``48\,\% above normal''), but once its own dryness is accounted for the ratio
+falls to \textbf{0.98}: it was burning what is normal for how dry it was. Norte de Santander
+collapses from 1.64 to \textbf{1.02} for the same reason. In the Andes the excess survives:
+Bogotá D.C.\ keeps \textbf{2.18$\times$} and Cundinamarca \textbf{1.86$\times$} after conditioning,
+so those are genuine anomalies and not weather artefacts.
+
+\paragraph{A national indicator would have missed the event.} Total January detections were
+41\,165 in 2022 and only 25\,335 in 2024. On a national average, January 2024 looks
+\emph{quieter} than 2022, and an analyst would have concluded that nothing unusual was happening.
+Region by region the picture is the opposite: Huila reaches \textbf{3.80$\times$} its own
+baseline, Bogotá \textbf{3.04$\times$}, Cundinamarca \textbf{2.60$\times$} and Boyacá
+\textbf{2.52$\times$}, all at the 100th percentile of their own history. The 2022 activity was concentrated in the
+savanna and Amazon (Vichada 10\,195, Meta 10\,616, Caquetá 9\,151 in that January), while 2024
+moved into the Andean departments. \textbf{The per-region requirement of the assignment is
+therefore not a presentation detail: a national aggregate hides exactly the event the system
+exists to detect.}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{../figures/indicator_validation_2024.png}
+\caption{January 2024 observed against the 2019--2023 baseline for the twelve departments with
+the highest activity. Every one of them is above its own baseline.}
+\end{figure}
 
 \subsection{Risks and mitigation}
 
