@@ -50,3 +50,10 @@ Thumbs.db
 
 !data/reference/.gitkeep
 
+
+# ----- LaTeX build artifacts -----
+*.aux
+*.log
+*.toc
+*.out
+*.synctex.gz
