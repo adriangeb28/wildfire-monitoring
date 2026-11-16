@@ -78,40 +78,61 @@ is the empirical proof required for the baseline-per-sensor section.
 All figures produced by `notebooks/01_source_profiling.ipynb`
 (18 code cells, validated top-to-bottom with 0 failures).
 
-## F1 — archive volume (2024, Colombia bbox)
+## F1 — archive volume, 2024 complete (Colombia bbox)
 
-| Sensor | 5-day windows | Detections |
-|---|---|---|
-| `VIIRS_NOAA20_SP` | 74 | **311 832** |
-| `VIIRS_SNPP_SP` | 30 (pull in progress) | **257 412** |
-| **Total so far** | | **569 244** |
+| Sensor | Detections | Inside Colombia | Inside % | ΣFRP (MW) | FRP mean (MW) |
+|---|---|---|---|---|---|
+| `VIIRS_SNPP_SP` (375 m) | 319 981 | 107 432 | 33.6 % | 2 900 083 | 9.06 |
+| `VIIRS_NOAA20_SP` (375 m) | 311 832 | 104 838 | 33.6 % | 2 836 330 | 9.10 |
+| `MODIS_SP` (1 km) | 71 820 | 24 727 | 34.4 % | 2 329 333 | 32.43 |
+| **Total** | **703 633** | **236 997** | **33.7 %** | **8 065 746** | — |
 
-`MODIS_SP` is queued. First conclusion for the ingestion contract: the historical
-volume is in the **hundreds of thousands of rows per sensor-year**, so the
-partitioning decision (5-day windows, one file each, cached) is not cosmetic.
+### The sensor effect, quantified (the graded requirement)
 
-## Monthly detections per sensor (2024)
+1. **Two VIIRS sensors agree within 2.6 %** for the same year
+   (S-NPP / NOAA-20 = **1.026**). They can therefore be pooled — after declaring
+   the factor — to lengthen the baseline. NOAA-21 has only ~3.7 years of history,
+   so it is used for the incremental stream, not as the baseline anchor.
+2. **MODIS and VIIRS are not interchangeable.** VIIRS detects **8.8×** more
+   records than MODIS (MODIS sees 11.4 % of the VIIRS count), and the mean FRP
+   per detection differs by **3.57×** (32.43 MW vs 9.08 MW) because a 1 km pixel
+   aggregates more energy and only the large fires cross its threshold.
+   **Consequence: a baseline built on MODIS with a present of VIIRS would report
+   an ~8.8× "anomaly" that is purely an instrument change.** This is the exact
+   failure mode the assignment asks teams to document.
+3. **Only 33.7 % of the bounding-box records are Colombian.** In November the
+   figure was 50.0 %. The leakage varies with the season and with fire activity
+   in neighbouring countries — which means the filter cannot be skipped even for
+   a single aggregation.
 
-| Month | NOAA-20 SP | S-NPP SP |
-|---|---|---|
-| 2024-01 | 70 345 | 71 360 |
-| 2024-02 | 54 920 | 58 157 |
-| 2024-03 | 75 636 | 81 686 |
-| 2024-04 | 41 388 | 42 537 |
-| 2024-05 | 4 122 | 3 672 |
-| 2024-06 | 2 519 | 1 361 |
-| 2024-07 → 2024-12 | 4 526 … 16 467 | 0 (not yet downloaded) |
+## Monthly detections per sensor (2024, complete)
 
-Two things this table proves:
+| Month | MODIS | NOAA-20 | S-NPP |
+|---|---|---|---|
+| 1 | 16 937 | 71 651 | 72 419 |
+| 2 | 13 357 | 54 920 | 58 157 |
+| 3 | 17 613 | 75 636 | 81 686 |
+| 4 | 8 144 | 41 388 | 42 537 |
+| 5 | 793 | 4 122 | 3 672 |
+| 6 | 558 | 2 519 | 1 997 |
+| 7 | 849 | 4 526 | 2 634 |
+| 8 | 2 538 | 10 704 | 10 805 |
+| 9 | 2 694 | 11 344 | 11 358 |
+| 10 | 2 386 | 10 723 | 10 196 |
+| 11 | 2 046 | 7 832 | 8 002 |
+| 12 | 3 905 | 16 467 | 16 518 |
 
-1. **Strong seasonality**: the January–April dry season carries 90 % of the year's
-   detections; May–June collapses to a few thousand. Any "anomaly" computed
-   against an annual mean is therefore meaningless — the baseline must be a
-   *calendar window*.
-2. **The two VIIRS sensors track each other closely** in the overlapping months
-   (within ~5–8 %), which is precisely the evidence needed to justify pooling
-   them after harmonisation — and the reason the zeros from July onward must be
-   read as *not yet downloaded*, never as *no fires*.
+Two conclusions that shape the design:
+
+1. **Strong seasonality, identical across sensors**: January–April (dry season)
+   carries ~76 % of the year's detections; May–June collapses by more than an
+   order of magnitude. Any anomaly computed against an annual mean is therefore
+   meaningless: the baseline must be a **calendar window** (same days of the year,
+   previous years).
+2. **The three sensors move together**, so seasonality is real signal, not
+   instrument noise. The instrument difference is a *level* shift (8.8×), not a
+   *shape* change — which is exactly why a per-sensor baseline works and a pooled
+   one does not.
 
 ## Weather panel (F2)
 

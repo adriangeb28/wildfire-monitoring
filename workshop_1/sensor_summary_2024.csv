@@ -1,0 +1,4 @@
+sensor,label,detections,inside_colombia,inside_pct,frp_sum_mw,frp_mean_mw
+VIIRS_SNPP_SP,VIIRS Suomi-NPP (375 m),319981,107432,33.6,2900083.1,9.063
+VIIRS_NOAA20_SP,VIIRS NOAA-20 (375 m),311832,104838,33.6,2836330.1,9.096
+MODIS_SP,MODIS (1 km),71820,24727,34.4,2329333.0,32.433

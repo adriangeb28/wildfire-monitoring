@@ -75,3 +75,38 @@ def assign_regions(frame, lat_col: str = "latitude", lon_col: str = "longitude")
     frame["region_id"] = [r[0] for r in results]
     frame["region_name"] = [r[1] for r in results]
     return frame
+
+
+def assign_regions_fast(frame, lat_col: str = "latitude", lon_col: str = "longitude"):
+    """Fast vectorised point-in-polygon using shapely.contains_xy.
+
+    Returns a copy of the frame with region_id / region_name columns. Points that
+    fall outside every region (neighbouring countries) get None.
+    """
+    import numpy as np
+    from shapely import contains_xy, prepare
+
+    regions = load_regions()
+    lats = frame[lat_col].to_numpy(dtype=float)
+    lons = frame[lon_col].to_numpy(dtype=float)
+    region_ids: list[str | None] = [None] * len(frame)
+    region_names: list[str | None] = [None] * len(frame)
+    pending = np.ones(len(frame), dtype=bool)
+
+    for region in regions:
+        geometry = region["geometry"]
+        prepare(geometry)
+        hit = contains_xy(geometry, lons, lats) & pending
+        if hit.any():
+            idx = np.nonzero(hit)[0]
+            for position in idx:
+                region_ids[position] = region["region_id"]
+                region_names[position] = region["name"]
+            pending &= ~hit
+        if not pending.any():
+            break
+
+    frame = frame.copy()
+    frame["region_id"] = region_ids
+    frame["region_name"] = region_names
+    return frame
