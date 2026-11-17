@@ -127,3 +127,16 @@ real numbers go into the evidence section.
 | Permission denied writing `datalake_*` (Linux) | set `AIRFLOW_UID` in `.env` to `id -u`, rerun `docker compose up airflow-init` |
 | `wait_for_bronze` skipped | no JSON in `datalake_bronze/` yet; run `bronze_ingestion` first |
 | Port 8080 or 5433 busy | stop the other program, or change the left side of the port mapping in `docker-compose.yml` |
+
+## 9. Rebuild the report with the screenshots
+
+Put the PNG files in `workshop_2/screenshots/` with the names above. The report picks them up
+automatically (missing ones show as "Screenshot pending"):
+
+```bash
+cd workshop_2/report
+pdflatex report.tex && pdflatex report.tex
+cp report.pdf ../report.pdf
+```
+
+No LaTeX installed? Commit the screenshots and ask whoever has it (or Claude) to rebuild.

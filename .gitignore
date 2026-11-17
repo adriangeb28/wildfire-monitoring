@@ -65,3 +65,4 @@ docs/build_pdf/
 airflow/logs/
 datalake_silver/_state/
 **/.*.tmp
+workshop_2/report/*.pdf
