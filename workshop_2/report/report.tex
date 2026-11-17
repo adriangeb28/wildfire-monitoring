@@ -381,7 +381,12 @@ Rows in \code{weather\_hourly\_20261117\_024528.parquet} (33 regions $\times$ 33
 files of rounds two and three: every fire and weather row in them had already been written (same
 FIRMS window and same forecast hour, polled minutes apart), so the registry classified all of them as
 duplicates and the run wrote schema-valid files with 0 new rows, plus 1\,630 quarantined rows. This is
-the cross-batch deduplication working as designed; new rows only appear when polls are hours apart.}
+the cross-batch deduplication working as designed. The scheduled runs at 03:00 (Bronze) and 03:30~UTC
+(Silver) gave the same result: the FIRMS payloads of all four polls between 02:43 and 03:00~UTC have
+the same SHA-256 (no satellite overpass in between), and the forecast payload changed only in its
+metadata, with no hourly value changed (\code{workshop\_2/poll\_comparison.md}). Silver therefore holds
+three runs per topic, one with data and two that recorded only repeats; new rows appear after the next
+VIIRS overpass.}
 \end{table}
 
 All outputs are committed in \code{datalake\_bronze/}, \code{datalake\_silver/} and
