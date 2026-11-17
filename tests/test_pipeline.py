@@ -91,6 +91,8 @@ def test_invalid_rows_go_to_quarantine_with_reason():
     assert sorted(rejected["reason"]) == ["bad_acq_time", "frp_nonpositive", "missing_frp", "outside_colombia"]
     assert stats["rows_in"] == 5 and stats["rows_rejected"] == 4
     assert set(rejected["bronze_row"]) == {2, 3, 4, 5}       # CSV line numbers, header = 1
+    payload = json.loads(rejected.loc[rejected["reason"] == "bad_acq_time", "payload"].iloc[0])
+    assert payload["acq_time"] == "2471" and payload["acq_date"] == "2026-11-10"   # row kept as received
 
 
 def test_confidence_codes_become_ordered_levels():
@@ -239,6 +241,7 @@ def test_silver_rows_trace_back_to_bronze_files(lake):
     except Exception:
         frame = pd.read_pickle(out)
     assert set(frame["bronze_file"]) == {N20.name, N21.name}
+    assert isinstance(frame["satellite"].dtype, pd.CategoricalDtype)   # schema survives the concat
 
 
 def test_real_parquet_file_is_readable(lake):

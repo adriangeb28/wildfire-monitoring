@@ -206,11 +206,14 @@ def preprocess_fires(envelope: dict, bronze_file: str,
     rejected = []
     keep = pd.Series(True, index=df.index)
 
+    original = raw.assign(bronze_file=bronze_file, bronze_row=df["bronze_row"])
+
     def drop(mask: pd.Series, reason: str) -> None:
+        """Quarantine the *original* row (as received), not the partly transformed one."""
         nonlocal keep
         mask = mask & keep
         if mask.any():
-            rejected.append(_reject(df[mask], reason, source))
+            rejected.append(_reject(original[mask], reason, source))
             keep &= ~mask
 
     # 3. required fields

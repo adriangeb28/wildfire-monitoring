@@ -43,6 +43,8 @@ PIPELINE_VERSION = "w2-0.1"
 TOPICS = {"firms_nrt_viirs": "fire_detections", "firms_archive": "fire_detections",
           "open_meteo_forecast": "weather_hourly"}
 KEY_COLUMN = {"fire_detections": "event_id", "weather_hourly": "weather_key"}
+SCHEMAS = {"fire_detections": (preprocess.FIRE_SCHEMA, preprocess.FIRE_REQUIRED),
+           "weather_hourly": (preprocess.WEATHER_SCHEMA, preprocess.WEATHER_REQUIRED)}
 UNITS = {"fire_detections": {"frp": "MW", "bright_ti4": "K", "bright_ti5": "K",
                              "latitude": "deg WGS84", "longitude": "deg WGS84", "observed_at": "UTC"},
          "weather_hourly": {"value": "see unit column", "observed_at": "UTC"}}
@@ -198,6 +200,8 @@ def process_pending(run_ts: datetime | None = None, bronze_dir: Path | None = No
             frame = pd.concat(frames, ignore_index=True)
             # the same key may appear in two bronze files of this run: keep the latest
             frame = frame.drop_duplicates(subset=KEY_COLUMN[topic], keep="last")
+            schema, required = SCHEMAS[topic]
+            frame = preprocess.enforce_schema(frame, schema, required)   # concat can loosen dtypes
             sources = sorted(frame["bronze_file"].unique())
             target = silver_dir / f"{topic}_{stamp}.parquet"
             _write_parquet(frame, target, {"topic": topic, "run_ts": run_ts.isoformat(),
