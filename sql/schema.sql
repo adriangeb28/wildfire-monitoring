@@ -6,6 +6,8 @@
 -- design of record.
 -- ---------------------------------------------------------------------------
 
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- Reference layer: administrative regions (33 for Colombia)
 CREATE TABLE IF NOT EXISTS region (
     region_id     TEXT PRIMARY KEY,           -- e.g. DANE department code
