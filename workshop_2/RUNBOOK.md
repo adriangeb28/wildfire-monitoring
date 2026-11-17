@@ -69,8 +69,8 @@ After the third round you must have:
 
 * at least 3 files per FIRMS product and 3 forecast files in `datalake_bronze/` (≥ 3 required),
 * at least 3 `fire_detections_*.parquet` and 3 `weather_hourly_*.parquet` in `datalake_silver/`
-  (≥ 3 required). If a round brings no new fire rows, no fire file is written for it, so do another
-  round later.
+  (≥ 3 required). Every Silver run that processes Bronze files writes one file per topic, even
+  when all rows were repeats (0 new rows): that run is still recorded.
 
 **[evidence]** `08_bronze_runs.png`: Grid view of `bronze_ingestion` with the green runs.
 **[evidence]** `09_folders.png`: file explorer (or `ls -l`) of `datalake_bronze/` and `datalake_silver/`.

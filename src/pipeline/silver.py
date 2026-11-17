@@ -194,10 +194,12 @@ def process_pending(run_ts: datetime | None = None, bronze_dir: Path | None = No
 
         written = []
         for topic, frames in by_topic.items():
-            frames = [f for f in frames if len(f)]
-            if not frames:
+            if not frames:                 # no Bronze file of this topic in the run
                 continue
-            frame = pd.concat(frames, ignore_index=True)
+            # A run that processed Bronze files always writes its Parquet, even with 0 new rows
+            # (only repeats): every run stays auditable and the file is schema-valid.
+            non_empty = [f for f in frames if len(f)]
+            frame = pd.concat(non_empty, ignore_index=True) if non_empty else frames[0].iloc[0:0]
             # the same key may appear in two bronze files of this run: keep the latest
             frame = frame.drop_duplicates(subset=KEY_COLUMN[topic], keep="last")
             schema, required = SCHEMAS[topic]

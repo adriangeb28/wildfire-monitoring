@@ -218,6 +218,10 @@ def test_overlapping_poll_drops_duplicates_and_keeps_revisions(lake):
     assert stats["duplicates_across_batches"] == 1
     assert stats["revised"] == 1
     assert summary["outputs"]["fire_detections"]["rows"] == 2
+    # a third poll with only repeats still writes an (empty) auditable file
+    bronze.write_bronze(firms_envelope(rows2), "firms_viirs_noaa20_nrt", NOW.replace(hour=9), bronze_dir)
+    third = run(bronze_dir, silver_dir, 45)
+    assert third["outputs"]["fire_detections"]["rows"] == 0
 
 
 def test_orphan_silver_file_from_a_crashed_run_is_removed(lake):
