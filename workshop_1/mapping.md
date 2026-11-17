@@ -1,5 +1,7 @@
 # Canonical mapping
 
+Repository: https://github.com/adriangeb28/wildfire-monitoring
+
 How each source field lands in the canonical event model, and how the hazard-specific attributes land
 in the domain tables of [`sql/schema.sql`](../sql/schema.sql). This is the Workshop 1 version: the
 tables below were filled against the real responses, and the ER draft lives in
