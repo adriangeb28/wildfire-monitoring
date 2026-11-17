@@ -357,15 +357,40 @@ levels, brightness sanity, in-batch duplicates, the 196~MW fire kept and flagged
 schema enforcement, Silver idempotency, cross-batch duplicate and revision detection, orphan cleanup,
 lineage, and a real Parquet round trip.
 
-\subsection{Live runs in Airflow}
+\subsection{Live runs in Airflow (2026-11-17, UTC)}
+
+The stack was built and started with Docker Desktop on Windows. \code{bronze\_ingestion} ran three
+times (the scheduled 21:00 run and two manual triggers at 02:46~UTC), producing nine Bronze files
+(three per source, 58--70~KB per FIRMS file, 431~KB per forecast file). \code{silver\_processing}
+processed the first round at 02:45~UTC:
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{L{6.8cm}R{2.4cm}}
+\toprule
+\textbf{Measure (live run)} & \textbf{Value} \\
+\midrule
+FIRMS rows in (NOAA-20 827, NOAA-21 675) & 1\,502 \\
+Rows in \code{fire\_detections\_20261117\_024528.parquet} & 687 \\
+Quarantined \code{outside\_colombia} & 815 \\
+Rows in \code{weather\_hourly\_20261117\_024528.parquet} (33 regions $\times$ 336~h $\times$ 4) & 44\,352 \\
+\bottomrule
+\end{tabular}
+\caption{First live Silver run. The Bronze files of the two later rounds were waiting for the next
+Silver run when the evidence was collected; the next scheduled Silver run (every 30 minutes)
+processes them, and the registry guarantees they are processed exactly once.}
+\end{table}
+
+All outputs are committed in \code{datalake\_bronze/}, \code{datalake\_silver/} and
+\code{datalake\_silver/\_quarantine/}.
 
 \evidence{02_airflow_dags.png}{Airflow UI with both DAGs.}
 \evidence{03_bronze_graph.png}{Successful \code{bronze\_ingestion} run (graph view).}
-\evidence{05_silver_graph.png}{Successful \code{silver\_processing} run with the FileSensor.}
 \evidence{07_silver_idempotent.png}{A second Silver run on the same files: skipped by the short-circuit.}
 \evidence{08_bronze_runs.png}{Three or more Bronze runs (grid view).}
-\evidence{09_folders.png}{Bronze JSON and Silver Parquet files on the host.}
-\evidence{10_notebook.png}{Notebook \code{02\_silver\_exploration.ipynb} reading a Silver Parquet file.}
+\evidence{09_folders.png}{Nine Bronze JSON files from three runs on the host.}
+\evidence{09b_folders.png}{Silver Parquet files, manifest, quarantine and state folders on the host.}
 
 \section{Challenges and decisions}
 

@@ -237,10 +237,10 @@ def process_pending(run_ts: datetime | None = None, bronze_dir: Path | None = No
             con.executemany("INSERT OR REPLACE INTO bronze_file VALUES (?,?,?,?,?,?,?,?,?)",
                             [(*row[:7], run_ts.isoformat(), row[7]) for row in file_rows])
 
+        summary["status"] = "committed"
         with (silver_dir / "_manifest.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({k: v for k, v in summary.items() if k != "files"} |
                                 {"bronze_files": [r[0] for r in file_rows]}, default=str) + "\n")
-        summary["status"] = "committed"
         log.info("silver run %s committed: %s", stamp, summary["outputs"])
     return summary
 
