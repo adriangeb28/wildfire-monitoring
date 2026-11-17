@@ -18,6 +18,7 @@
 \captionsetup{font=small,labelfont=bf}
 \newcommand{\code}[1]{\texttt{\small #1}}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\arraybackslash}p{#1}}
 
 \title{\textbf{Wildfire Monitoring}\\[2pt]
 \large A multi-source system for measuring anomalous fire activity in Colombia\\[10pt]
@@ -139,7 +140,10 @@ The email route is written up in \code{docs/downloading.md} for whoever prefers 
 \section{Did the sources actually work?}
 
 Yes, all four, and we kept the raw response for each one in \code{workshop\_1/samples/} along with
-the HTTP headers (\code{ETag}, \code{Last-Modified}) that the incremental design leans on.
+the HTTP response headers. Those headers corrected one assumption: the FIRMS area API answers with
+\code{Cache-Control: no-cache} and sends neither \code{ETag} nor \code{Last-Modified}, so change
+detection for F3 cannot rely on HTTP metadata and rests on the watermark plus a content hash per
+record (Section~\ref{sec:contract}). Appendix~\ref{app:snippets} reproduces the raw responses.
 
 \begin{table}[h]
 \centering
@@ -321,7 +325,8 @@ Each source field goes to the canonical event model
 \code{latitude}, \code{longitude} & \code{latitude}, \code{longitude} & WGS84, decimal degrees, as delivered \\
 \code{severity} & \code{frp} & MW \\
 \code{event\_id} & -- & Deterministic hash of source + rounded position + timestamp; never a serial \\
-\code{raw\_reference} & -- & Path of the unmodified response + line number or record id \\
+\code{raw\_reference} & -- & Raw file name (\code{source\_YYYYMMDD\_HHMMSS.ext}) + line number \\
+\code{content\_hash} & whole row & SHA-256 of the normalised row; same \code{event\_id} with a new hash = revised record \\
 \bottomrule
 \end{tabular}
 \caption{Mapping for the fire sources (F1, F3).}
@@ -331,9 +336,10 @@ Each source field goes to the canonical event model
 sample of a continuous field at a place and a time. It is not a discrete event, and forcing it into
 \code{event} would mean inventing a coordinate and a severity that do not exist. Only
 \code{observed\_at}, \code{latitude}, \code{longitude} (the region centroid) and
-\code{raw\_reference} map onto \code{event}; the measurements live in
-\code{weather\_observation}, one row per variable, with the model and the grid resolution written
-down next to the value.
+\code{raw\_reference} would have a natural counterpart, so we write no \code{event} row for weather at
+all: the measurements live in \code{weather\_observation}, one row per variable, with the model and
+the grid resolution written down next to the value, and they reach the fire events only through
+\code{region\_id} and the date.
 
 \subsection{Tables}
 
@@ -348,9 +354,24 @@ down next to the value.
         \code{cluster\_params}.
   \item \code{weather\_observation}: \code{region\_id}, \code{observed\_at}, \code{variable},
         \code{value}, \code{unit}, \code{source}, \code{model} and \code{grid\_resolution\_deg}.
-  \item \code{ingestion\_run}: source, partition, mode, status, watermark before and after, row
-        counts and the error message when there is one.
+  \item \code{source}: the catalogue of the four sources with URL, format, role, licence,
+        attribution and status (\code{active}, \code{frozen}, \code{retired}; S-NPP is frozen since
+        2026-11-02).
+  \item \code{ingestion\_run}: source, partition, mode, status, \code{rows\_in}, \code{rows\_new},
+        \code{rows\_updated}, \code{rows\_rejected}, watermark before and after, \code{started},
+        \code{finished} and the error message when there is one.
+  \item \code{ingestion\_state}: one row per source with the current \code{watermark},
+        \code{last\_success} and the last run; it is only updated after a partition commits.
+  \item \code{rejected\_record}: the quarantine, with the run, the source, the reason
+        (\code{frp<=0}, \code{outside\_colombia}, \code{bad\_acq\_time}, \ldots) and the unmodified
+        payload.
+  \item \code{event\_group}: the course's grouping table. In this domain a group is a fire event, so
+        the physical table is \code{fire\_event\_member} and \code{event\_group} is a view over it
+        with the course's column names (\code{group\_id}, \code{event\_id}).
 \end{itemize}
+
+The schema in \code{sql/schema.sql} was loaded into PostgreSQL~16 without errors (with the PostGIS
+geometry column replaced by text, since the test server had no PostGIS).
 
 \begin{figure}[H]
 \centering
@@ -358,7 +379,9 @@ down next to the value.
 \caption{Draft entity-relationship diagram. \code{event} is the canonical model required by the
 course; \code{fire\_detection}, \code{fire\_event} and \code{weather\_observation} are the
 hazard-specific tables; \code{region} is the reference layer that makes the ``per region''
-indicator possible; \code{ingestion\_run} makes the pipeline restartable.}
+indicator possible; \code{source}, \code{ingestion\_run}, \code{ingestion\_state} and
+\code{rejected\_record} are the operational model that makes the pipeline auditable and
+restartable.}
 \label{fig:er}
 \end{figure}
 
@@ -389,7 +412,7 @@ region polygons. FRP in MW, precipitation in mm, wind in km/h, temperature in $^
 Confidence harmonised to 0--100 with the mapping table written down. Units are declared per column
 and never inferred at read time, which is the only way to survive a source that changes its mind.
 
-\section{The ingestion contract}
+\section{The ingestion contract}\label{sec:contract}
 
 \begin{table}[h]
 \centering
@@ -414,6 +437,22 @@ watermark only advances after that commit. \code{ingestion\_run} keeps the state
 restart knows where it was. The overlap window is not redundancy. It is the recovery policy: if the
 12:00 poll fails, the 15:00 poll with \code{DAY\_RANGE=2} covers the hole. The historical pull works
 the same way, and reports windows already on disk as \code{cached}.
+
+\paragraph{New versus changed records.} \code{ON CONFLICT DO NOTHING} only answers ``is it new''.
+To also catch revisions, every row carries a \code{content\_hash}; on conflict the row is updated
+only when the hash differs, and the run counts it in \code{rows\_updated}. This matters most for F4:
+the forecast for a given hour, and the \code{past\_days} values, change from one call to the next, so
+for weather the write is an upsert keyed on (\code{region\_id}, \code{observed\_at},
+\code{variable}, \code{source}) that keeps the latest value.
+
+\paragraph{NRT and SP describe the same detections.} When the SP archive for a period arrives, it
+supersedes the NRT rows of that period: the baseline reads only SP, the current window reads NRT, and
+an NRT row is never counted in the same aggregate as its SP successor.
+
+\paragraph{Empirical update behaviour (open item).} Our evidence for F3 and F4 is one poll per
+source, taken on 2026-11-14. The two-poll comparison asked for by the workshop (two polls at least an
+hour apart, recording what changed) has not been recorded yet and is the first task of Workshop~2,
+before the watermark logic is coded.
 
 \paragraph{A source that rewrites its own past.} NRT records are replaced by standard-processing
 records with roughly a five-month lag. Any design that assumes history is immutable is wrong here,
@@ -474,8 +513,11 @@ The indicator is conditioned on weather because the assignment asks for activity
 \end{enumerate}
 
 We tested the assumption behind the conditioning before writing the rest of the design. For 2024, daily
-detections correlate \textbf{+0.83} with VPD, \textbf{$-$0.69} with seven-day accumulated
-precipitation, and \textbf{+0.72} with maximum temperature. Two departments with different rainfall
+detections correlate \textbf{+0.78} with VPD, \textbf{$-$0.60} with seven-day accumulated
+precipitation, and \textbf{+0.65} with maximum temperature (notebook, cell~14). This first test is
+deliberately coarse: it pools the three sensors and the whole bounding box against the national mean
+weather. The per-sensor, Colombia-only version is part of the Workshop~2 analysis; the direction of
+the relation is what the design depends on. Two departments with different rainfall
 cannot be compared by raw counts. The gap between them would be weather, and calling it an anomaly
 would be a mistake with a table and a chart around it.
 
@@ -571,17 +613,47 @@ License and attribution & NASA EOSDIS citation, Open-Meteo CC-BY 4.0, plus a lic
 Four layers, following the reference architecture of the course project and adapted to this hazard.
 Acquisition is one module per source under \code{src/sources/}, driven by \code{config/sources.yaml},
 carrying the cache and the watermark. Normalisation handles units, time zones, confidence and the
-region assignment under \code{src/normalization/}. Storage is the six tables in
-\code{sql/schema.sql}. Presentation is the Dash application in \code{dashboard/}, fed by the
+region assignment under \code{src/normalization/}. Storage is the ten tables and the
+\code{event\_group} view in \code{sql/schema.sql}. Presentation is the Dash application in \code{dashboard/}, fed by the
 region-day panel. \code{ingest.py} is the entry point that ties them together; today it is a stub
 that reads the configuration and reports which sources are declared, which is the right amount of
-code for this stage.
+code for this stage. Figure~\ref{fig:arch} shows the whole system.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{../figures/architecture.png}
+\caption{High-level architecture, following the reference architecture of the course: sources, raw
+landing zone, normalisation with quarantine, the canonical database, and the analytics and Dash
+layer, all inside Docker Compose with an orchestrator for the incremental schedule.}
+\label{fig:arch}
+\end{figure}
 
 \section{Conclusions, and what we do not know yet}
 
 The four sources work. We queried each one for real and kept the responses, and the archive alone
 accounts for 703\,633 detections in the 2024 partition, which is enough volume to justify pulling it in partitions
-instead of in one gulp.
+instead of in one gulp. Extrapolating the 2024 volume (Table~\ref{tab:volume}), the full archive for
+the bounding box is in the order of nine million rows and under 1~GB of CSV.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{L{3.3cm}L{3.2cm}R{2.2cm}R{2.2cm}R{2.4cm}}
+\toprule
+\textbf{Sensor} & \textbf{Period} & \textbf{Rows (est.)} & \textbf{Size (est.)} & \textbf{5-day requests} \\
+\midrule
+VIIRS NOAA-20 SP & 2018-04 to 2026-11 & $\approx$2.7\,M & $\approx$225 MB & $\approx$630 \\
+VIIRS S-NPP SP & 2012-01 to 2026-11 & $\approx$4.7\,M & $\approx$400 MB & $\approx$1\,080 \\
+MODIS SP & 2000-11 to 2026 & $\approx$1.8\,M & $\approx$150 MB & $\approx$1\,860 \\
+ERA5 panel (F2) & 2018-01 to 2026-11 & 108\,735 (real) & small & 1 per month \\
+\bottomrule
+\end{tabular}
+\caption{Estimated full historical volume, bounding box. Rows = 2024 count per sensor $\times$ years
+of coverage; size = rows $\times$ 84 bytes per row measured on the raw CSV samples. Real years vary
+with the dry season, so these are orders of magnitude, not targets. About a third of the rows survive
+the Colombia polygon filter.}
+\label{tab:volume}
+\end{table}
 
 The instrument discontinuity has a number attached to it: 8.8$\times$ in count and
 3.57$\times$ in mean FRP between MODIS and VIIRS, against 2.6\,\% between the two VIIRS sensors.
@@ -614,5 +686,47 @@ indicator's scale has been tested on one episode instead of several.
   \item geoBoundaries, \code{gbOpen/COL/ADM1} (ODbL 1.0), \url{https://www.geoboundaries.org}
   \item DANE, Marco Geoestadístico Nacional (official alternative for the region layer).
 \end{itemize}
+
+
+\appendix
+\section{Raw response snippets}\label{app:snippets}
+
+Unmodified excerpts of the files in \code{workshop\_1/samples/}, taken on 2026-11-14 (UTC).
+
+\paragraph{F3, FIRMS NRT VIIRS NOAA-20, Colombia bbox, 5 days} (\code{firms\_VIIRS\_NOAA20\_NRT\_colombia\_5d\_20261114T025629Z.csv}, first lines):
+\begin{verbatim}
+latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,
+  instrument,confidence,version,bright_ti5,frp,daynight
+9.73813,-73.50816,306.26,0.55,0.51,2026-11-10,658,N20,
+  VIIRS,n,2.0NRT,293.71,3.08,N
+9.74365,-73.51219,306.48,0.55,0.51,2026-11-10,658,N20,
+  VIIRS,n,2.0NRT,293.09,1.94,N
+\end{verbatim}
+(Lines are wrapped here for width.) Note \code{acq\_time = 658}: 06:58 UTC without zero padding.
+
+\paragraph{F3, response headers} (\code{firms\_VIIRS\_NOAA20\_NRT\_20261114T025546Z\_headers.txt}, complete):
+\begin{verbatim}
+Date: Sat, 14 Nov 2026 02:55:49 GMT
+Content-Type: text/plain;charset=UTF-8
+Cache-Control: no-cache
+\end{verbatim}
+No \code{ETag} and no \code{Last-Modified}.
+
+\paragraph{F3, VIIRS S-NPP NRT after the end of the mission} (\code{firms\_VIIRS\_SNPP\_NRT\_20261114T025547Z.csv}, complete): HTTP 200 with the header line only.
+\begin{verbatim}
+latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,
+  instrument,confidence,version,bright_ti5,frp,daynight
+\end{verbatim}
+
+\paragraph{F4, Open-Meteo forecast, Bogotá} (\code{openmeteo\_forecast\_bogota\_20261114T025548Z.json}, beginning):
+\begin{verbatim}
+{"latitude":4.7451673,"longitude":-74.10025,"generationtime_ms":0.0634,
+ "utc_offset_seconds":0,"timezone":"GMT","timezone_abbreviation":"GMT",
+ "elevation":2557.0,"hourly_units":{"time":"iso8601","temperature_2m":"°C",
+ "relative_humidity_2m":"%","precipitation":"mm","wind_speed_10m":"km/h"},
+ "hourly":{"time":["2026-11-12T00:00","2026-11-12T01:00", ...
+\end{verbatim}
+(\code{generationtime\_ms} shortened.) The response confirms \code{timezone=GMT} and declares the unit
+of every variable, which is what the normalisation reads.
 
 \end{document}

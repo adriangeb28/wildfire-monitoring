@@ -37,11 +37,12 @@ TABLES = {
         "x": 5, "top": 100, "w": 50,
         "columns": [
             "event_id  PK",
-            "source · event_type",
-            "observed_at  (UTC)",
+            "source  FK → source",
+            "event_type · observed_at (UTC)",
             "latitude · longitude  (WGS84)",
             "severity + severity_unit",
             "raw_reference",
+            "content_hash  (change detection)",
         ],
     },
     "fire_event": {
@@ -55,8 +56,25 @@ TABLES = {
             "sensor_set · cluster_params",
         ],
     },
+    "fire_event_member": {
+        "x": 113, "top": 68, "w": 50,
+        "columns": [
+            "fire_event_id  FK, PK",
+            "event_id  FK, PK",
+            "exposed as view event_group",
+        ],
+    },
+    "source": {
+        "x": 167, "top": 100, "w": 50,
+        "columns": [
+            "source_id  PK",
+            "name · url · format · role",
+            "license · attribution",
+            "status  (active/frozen/retired)",
+        ],
+    },
     "fire_detection": {
-        "x": 5, "top": 68, "w": 50,
+        "x": 5, "top": 63, "w": 50,
         "columns": [
             "event_id  PK, FK → event",
             "region_id  FK → region",
@@ -66,15 +84,8 @@ TABLES = {
             "satellite · instrument · daynight",
         ],
     },
-    "fire_event_member": {
-        "x": 113, "top": 68, "w": 50,
-        "columns": [
-            "fire_event_id  FK, PK",
-            "event_id  FK, PK",
-        ],
-    },
     "weather_observation": {
-        "x": 5, "top": 34, "w": 50,
+        "x": 5, "top": 31, "w": 50,
         "columns": [
             "region_id  FK, PK",
             "observed_at  PK  (UTC)",
@@ -90,17 +101,36 @@ TABLES = {
             "name · level",
             "centroid_lat · centroid_lon",
             "geometry  (WGS84)",
-            "source  (geoBoundaries / DANE)",
+            "source  (geoBoundaries)",
         ],
     },
     "ingestion_run": {
         "x": 113, "top": 34, "w": 50,
         "columns": [
             "run_id  PK",
-            "source · partition · mode",
+            "source  FK · partition · mode",
             "status  (started/committed/failed)",
-            "rows_read · rows_written",
+            "rows_in · rows_new · rows_rejected",
             "watermark_before · watermark_after",
+            "started · finished",
+        ],
+    },
+    "ingestion_state": {
+        "x": 167, "top": 66, "w": 50,
+        "columns": [
+            "source_id  PK, FK → source",
+            "watermark · last_success",
+            "last_run_id  FK → ingestion_run",
+            "http_etag · http_last_modified",
+        ],
+    },
+    "rejected_record": {
+        "x": 167, "top": 34, "w": 50,
+        "columns": [
+            "rejected_id  PK",
+            "run_id  FK → ingestion_run",
+            "source · reason",
+            "payload  (raw row, JSONB)",
         ],
     },
 }
@@ -113,6 +143,9 @@ RELATIONS = [
     ("fire_event_member", "fire_event", "fire_event_id", "top", "right", -0.12),
     ("fire_event", "region", "region_id", "bottom", "top", 0.0),
     ("weather_observation", "region", "region_id", "right", "left", 0.0),
+    ("ingestion_state", "source", "source_id", "top", "bottom", 0.0),
+    ("rejected_record", "ingestion_run", "run_id", "left", "right", 0.0),
+    ("ingestion_state", "ingestion_run", "last_run_id", "left", "top", 0.15),
 ]
 
 
@@ -171,8 +204,8 @@ def anchor(spec: dict, side: str) -> tuple[float, float]:
 
 def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(14, 8.0))
-    ax.set_xlim(0, 168)
+    fig, ax = plt.subplots(figsize=(18, 8.4))
+    ax.set_xlim(0, 222)
     ax.set_ylim(0, 112)
     ax.axis("off")
 
@@ -200,9 +233,9 @@ def main() -> int:
     ax.text(2, 104.5,
             "event = canonical model required by the course   ·   fire_detection / fire_event / "
             "weather_observation = hazard domain   ·   region = 33 administrative units   ·   "
-            "ingestion_run = operational state",
+            "source / ingestion_run / ingestion_state / rejected_record = operational model",
             fontsize=8, color="#404040")
-    ax.text(2, 2.0,
+    ax.text(2, 0.5,
             "PK = primary key   ·   FK = foreign key   ·   all timestamps UTC   ·   "
             "all geometry WGS84 decimal degrees   ·   writes are idempotent on duplicate_key",
             fontsize=8, color="#404040", style="italic")

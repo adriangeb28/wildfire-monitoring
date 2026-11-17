@@ -15,7 +15,8 @@ tables below were filled against the real responses, and the ER draft lives in
 | `observed_at` | timestamptz | Always UTC. |
 | `latitude` / `longitude` | double | WGS84, decimal degrees. |
 | `severity` + `severity_unit` | double + text | FRP in MW for detections. |
-| `raw_reference` | text | Path of the unmodified response + line number or record id. |
+| `raw_reference` | text | Raw file name (`source_YYYYMMDD_HHMMSS.ext`) + line number. |
+| `content_hash` | text | SHA-256 of the normalised row. Same `event_id` with a new hash means the record was revised (new vs changed detection). |
 
 ## F1: NASA FIRMS archive (VIIRS and MODIS)
 
@@ -39,9 +40,10 @@ can change after it was published.
 ## F2 and F4: Open-Meteo, historical and forecast
 
 These two do not fit the discrete event model, and forcing them in breaks it. A weather value is a
-sample of a continuous field at a place and a time. Only `observed_at`, `latitude`, `longitude` (the
-region centroid) and `raw_reference` map onto `event`; the measurements live in
-`weather_observation`, one row per variable.
+sample of a continuous field at a place and a time. No `event` row is written for weather: the
+measurements live in `weather_observation`, one row per variable, and reach the fire events through
+`region_id` and the date. Writes are upserts keyed on (`region_id`, `observed_at`, `variable`,
+`source`), because forecast and `past_days` values change between calls.
 
 | Source field | Target | Rule |
 |---|---|---|
@@ -62,7 +64,19 @@ spread reaches about 1 km, and `eps_time` around 24 h with connected-component c
 fire burns for days. The identifier is a hash of the rounded centroid plus `first_seen`. We report
 detection count, grouped event count and total FRP, and we say which of the three the indicator uses.
 
-`region` holds the 33 units, from DANE's Marco Geoestadístico Nacional.
+`region` holds the 33 units, from geoBoundaries `gbOpen/COL/ADM1` (ODbL 1.0); DANE's Marco
+Geoestadístico Nacional is the official alternative.
+
+## Operational tables (course model)
+
+| Course table | Table in `sql/schema.sql` | Notes |
+|---|---|---|
+| `source` | `source` | URL, format, role, licence, attribution, status (`active` / `frozen` / `retired`) |
+| `ingestion_run` | `ingestion_run` | `rows_in`, `rows_new`, `rows_updated`, `rows_rejected`, watermark before/after, `started`, `finished` |
+| `ingestion_state` | `ingestion_state` | `watermark`, `last_success`, last run; advanced only after commit |
+| `event` | `event` | `timestamp` of the course model is `observed_at` |
+| `event_group` | view over `fire_event_member` | a group is a fire event: `group_id` = `fire_event_id` |
+| `rejected_record` | `rejected_record` | run, source, reason, unmodified payload (JSONB) |
 
 ## Normalisation rules
 
@@ -76,6 +90,6 @@ detection count, grouped event count and total FRP, and we say which of the thre
 
 ## Still open
 
-The `l`/`n`/`h` to 0-100 mapping is written down but has not been validated against labelled fires,
+The `l`/`n`/`h` to 0-100 mapping is not fixed yet (`confidence_raw` is always kept unchanged, so it can be re-derived),
 and the clustering thresholds are values we proposed and never tuned. Both belong to
 Workshop 2.
