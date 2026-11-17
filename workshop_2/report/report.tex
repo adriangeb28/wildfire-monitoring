@@ -387,6 +387,7 @@ All outputs are committed in \code{datalake\_bronze/}, \code{datalake\_silver/} 
 
 \evidence{02_airflow_dags.png}{Airflow UI with both DAGs.}
 \evidence{03_bronze_graph.png}{Successful \code{bronze\_ingestion} run (graph view).}
+\evidence{05_silver_graph.png}{Successful \code{silver\_processing} run (02:54~UTC): FileSensor, short-circuit, processing of the six pending Bronze files of rounds two and three, and report.}
 \evidence{07_silver_idempotent.png}{A second Silver run on the same files: skipped by the short-circuit.}
 \evidence{08_bronze_runs.png}{Three or more Bronze runs (grid view).}
 \evidence{09_folders.png}{Nine Bronze JSON files from three runs on the host.}
