@@ -60,3 +60,8 @@ Thumbs.db
 
 # ----- PDF build intermediates -----
 docs/build_pdf/
+
+# ----- Workshop 2: Airflow runtime and Silver state -----
+airflow/logs/
+datalake_silver/_state/
+**/.*.tmp

@@ -1,0 +1,9 @@
+# Python dependencies installed into the Airflow image (see Dockerfile).
+# Airflow itself comes from the base image; versions are pinned by the official
+# Airflow 2.10.5 constraints file at build time.
+pandas          # Silver preprocessing
+pyarrow         # Parquet persistence
+requests        # FIRMS and Open-Meteo HTTP clients
+shapely         # point-in-polygon region assignment
+python-dotenv   # .env loading when the code runs outside Airflow
+PyYAML          # config/sources.yaml
