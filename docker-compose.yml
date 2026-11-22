@@ -40,6 +40,9 @@ x-airflow-common: &airflow-common
     DATALAKE_BRONZE: /opt/airflow/datalake_bronze
     DATALAKE_SILVER: /opt/airflow/datalake_silver
     DATALAKE_GOLD: /opt/airflow/datalake_gold
+    PYSPARK_PYTHON: /usr/local/bin/python
+    PYSPARK_DRIVER_PYTHON: /usr/local/bin/python
+    SPARK_LOCAL_IP: 127.0.0.1
   volumes:
     - ./airflow/dags:/opt/airflow/dags
     - ./airflow/logs:/opt/airflow/logs
@@ -112,6 +115,7 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+    mem_limit: 4g
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
       interval: 30s
@@ -159,3 +163,4 @@ services:
 volumes:
   airflow-db:
   warehouse-db:
+

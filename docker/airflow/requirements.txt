@@ -7,3 +7,4 @@ requests        # FIRMS and Open-Meteo HTTP clients
 shapely         # point-in-polygon region assignment
 python-dotenv   # .env loading when the code runs outside Airflow
 PyYAML          # config/sources.yaml
+pyspark         #3.5.3
